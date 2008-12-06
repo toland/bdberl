@@ -24,10 +24,15 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
                               char* inbuf, int inbuf_sz, 
                               char** outbuf, int outbuf_sz);
 
+static void bdberl_ready_async(ErlDrvData handle, ErlDrvThreadData thread_data);
+
 /**
  * Command codes
  */
-#define CMD_PARSE          0
+#define CMD_OPEN_DB          0
+#define CMD_CLOSE_DB         1
+#define CMD_GET              2
+#define CMD_PUT              3
 
 /** 
  * Driver Entry
@@ -46,7 +51,7 @@ ErlDrvEntry bdberl_drv_entry =
     bdberl_drv_control,		/* F_PTR control, port_command callback */
     NULL,			/* F_PTR timeout, reserved */
     NULL,                       /* F_PTR outputv, reserved */
-    NULL,                       /* F_PTR ready_async */
+    bdberl_ready_async,         /* F_PTR ready_async */
     NULL,                       /* F_PTR flush */
     NULL,                       /* F_PTR call */
     NULL,                       /* F_PTR event */
@@ -104,4 +109,8 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     }
     *outbuf = 0;
     return 0;
+}
+
+static void bdberl_ready_async(ErlDrvData handle, ErlDrvThreadData thread_data)
+{
 }

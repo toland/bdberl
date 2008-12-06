@@ -65,7 +65,6 @@ def erl_app_modules(app)
       ERL
 
   output = erl_run(script, "-pa ebin")
-  puts output
   if output[/badmatch/]
     fail "Error processing .app file: ", output
     ""
