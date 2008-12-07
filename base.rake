@@ -136,7 +136,7 @@ def run_tests(dir, rest = "")
 	            -noshell -s ct_run script_start -s erlang halt \
                     #{get_cover(dir)} \
 	            #{get_suites(dir)} -logdir #{dir}/logs -env TEST_DIR #{PWD}/#{dir} \
-	            #{rest}"
+	            #{rest}", :verbose => false
 
   fail if $?.exitstatus != 0 && !ENV["stop_on_fail"].nil?
 

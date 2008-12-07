@@ -9,70 +9,87 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include "erl_driver.h"
 
-#include "db.h"
-
-/**
- * Driver functions
- */
-static ErlDrvData bdberl_drv_start(ErlDrvPort port, char* buffer);
-
-static void bdberl_drv_stop(ErlDrvData handle);
-
-static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd, 
-                              char* inbuf, int inbuf_sz, 
-                              char** outbuf, int outbuf_sz);
-
-static void bdberl_ready_async(ErlDrvData handle, ErlDrvThreadData thread_data);
+#include "hive_hash.h"
+#include "bdberl_drv.h"
 
 /**
- * Command codes
+ * Global instance of DB_ENV; only a single one exists per O/S process.
  */
-#define CMD_OPEN_DB          0
-#define CMD_CLOSE_DB         1
-#define CMD_GET              2
-#define CMD_PUT              3
-
-/** 
- * Driver Entry
- */
-ErlDrvEntry bdberl_drv_entry = 
-{
-    NULL,			/* F_PTR init, N/A */
-    bdberl_drv_start,		/* L_PTR start, called when port is opened */
-    bdberl_drv_stop,		/* F_PTR stop, called when port is closed */
-    NULL,			/* F_PTR output, called when erlang has sent */
-    NULL,			/* F_PTR ready_input, called when input descriptor ready */
-    NULL,			/* F_PTR ready_output, called when output descriptor ready */
-    "bdberl_drv",               /* driver_name */
-    NULL,			/* F_PTR finish, called when unloaded */
-    NULL,			/* handle */
-    bdberl_drv_control,		/* F_PTR control, port_command callback */
-    NULL,			/* F_PTR timeout, reserved */
-    NULL,                       /* F_PTR outputv, reserved */
-    bdberl_ready_async,         /* F_PTR ready_async */
-    NULL,                       /* F_PTR flush */
-    NULL,                       /* F_PTR call */
-    NULL,                       /* F_PTR event */
-    ERL_DRV_EXTENDED_MARKER,        
-    ERL_DRV_EXTENDED_MAJOR_VERSION, 
-    ERL_DRV_EXTENDED_MINOR_VERSION,
-    ERL_DRV_FLAG_USE_PORT_LOCKING,
-    NULL,                        /* Reserved */
-    NULL                         /* F_PTR process_exit */
-};
+static DB_ENV* G_DB_ENV;
 
 /**
- * Structure for holding port instance data
+ * Global variable to track the return code from opening the DB_ENV. We track this
+ * value so as to provide a useful error code when the user attempts to open the
+ * port and it fails due to an error that occurred when opening the environment.
  */
-typedef struct 
-{
-    ErlDrvPort port;
-} PortData;
+static int G_DB_ENV_ERROR;
+
+
+/**
+ * G_DATABASES is a global array of Database structs. Used to track currently opened DB*
+ * handles and ensure that they get cleaned up when all ports which were using them exit or
+ * explicitly close them.
+ * 
+ * This array is allocated when the driver is first initialized and does not grow/shrink
+ * dynamically. G_DATABASES_SIZE contains the size of the array. G_DATABASES_NAMES is a hash of
+ * filenames to array index for an opened Database. 
+ *
+ * All access to G_DATABASES and G_DATABASES_NAMES must be protected by the read/write lock
+ * G_DATABASES_RWLOCK.
+ */
+static Database*     G_DATABASES;
+static int           G_DATABASES_SIZE;
+static ErlDrvRWLock* G_DATABASES_RWLOCK;
+static hive_hash*    G_DATABASES_NAMES;
+
 
 DRIVER_INIT(bdberl_drv) 
 {
+    // Setup flags we'll use to init the environment
+    int flags = 
+        DB_INIT_LOCK |          /* Enable support for locking */
+        DB_INIT_TXN |           /* Enable support for transactions */
+        DB_INIT_MPOOL |         /* Enable support for memory pools */
+        DB_RECOVER |            /* Enable support for recovering from failures */
+        DB_CREATE |             /* Create files as necessary */
+        DB_REGISTER |           /* Run recovery if needed */
+        DB_THREAD;              /* Make the environment free-threaded */
+
+    // Initialize global environment -- use environment variable DB_HOME to 
+    // specify where the working directory is
+    db_env_create(&G_DB_ENV, 0);
+    G_DB_ENV_ERROR = G_DB_ENV->open(G_DB_ENV, 0, flags, 0);
+    if (G_DB_ENV_ERROR == 0)
+    {
+        // Use the BDBERL_MAX_DBS environment value to determine the max # of
+        // databases to permit the VM to open at once. Defaults to 1024.
+        G_DATABASES_SIZE = 1024;
+        char* max_dbs_str = getenv("BDBERL_MAX_DBS");
+        if (max_dbs_str != 0)
+        {
+            G_DATABASES_SIZE = atoi(max_dbs_str);
+            if (G_DATABASES_SIZE <= 0)
+            {
+                G_DATABASES_SIZE = 1024;
+            }
+        }
+
+        // BDB is setup -- allocate structures for tracking databases
+        G_DATABASES = (Database*) driver_alloc(sizeof(Database) * G_DATABASES_SIZE);
+        memset(G_DATABASES, '\0', sizeof(Database) * G_DATABASES_SIZE);
+        G_DATABASES_RWLOCK = erl_drv_rwlock_create("bdberl_drv: G_DATABASES_RWLOCK");
+        G_DATABASES_NAMES = hive_hash_new(G_DATABASES_SIZE);            
+    }
+    else
+    {
+        // Something bad happened while initializing BDB; in this situation we 
+        // cleanup and set the environment to zero. Attempts to open ports will
+        // fail and the user will have to sort out how to resolve the issue.
+        G_DB_ENV->close(G_DB_ENV, 0);
+        G_DB_ENV = 0;
+    }
+
     return &bdberl_drv_entry;
 }
 
@@ -111,6 +128,10 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     return 0;
 }
 
-static void bdberl_ready_async(ErlDrvData handle, ErlDrvThreadData thread_data)
+static void bdberl_drv_ready_async(ErlDrvData handle, ErlDrvThreadData thread_data)
+{
+}
+
+static void bdberl_drv_process_exit(ErlDrvData handle, ErlDrvMonitor *monitor)
 {
 }
