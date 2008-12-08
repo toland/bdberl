@@ -1,0 +1,3 @@
+*.o
+*.beam
+c_src/system
