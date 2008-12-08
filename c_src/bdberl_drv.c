@@ -12,6 +12,7 @@
 
 #include "hive_hash.h"
 #include "bdberl_drv.h"
+#include "bin_helper.h"
 
 /**
  * Function prototypes
@@ -199,11 +200,12 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Pack the status and dbref (or errno) into a binary and return it
         // Byte 0   : Status
         // Byte 1..4: dbref/errno
-        ErlDrvBinary* result = driver_alloc_binary(5);
-        result->orig_bytes[0] = status;
-        memcpy(result->orig_bytes+1, (char*)&dbref, sizeof(dbref));
-        *outbuf = (char*)result;
-        return result->orig_size;
+        BinHelper bh;
+        bin_helper_init(&bh, 5);
+        bin_helper_push_byte(&bh, status);
+        bin_helper_push_int32(&bh, dbref);
+        *outbuf = (char*)bh.bin;
+        return bh.bin->orig_size;
     }
     case CMD_CLOSE_DB:
     {
@@ -214,10 +216,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         int rc = close_database(dbref, d);
         
         // Setup to return the rc
-        ErlDrvBinary* result = driver_alloc_binary(4);
-        memcpy(result->orig_bytes, (char*)&rc, sizeof(rc));
-        *outbuf = (char*)result;
-        return result->orig_size;
+        BinHelper bh;
+        bin_helper_init(&bh, 4);
+        bin_helper_push_int32(&bh, rc);
+        *outbuf = (char*)bh.bin;
+        return bh.bin->orig_size;
     }
     }
     *outbuf = 0;
