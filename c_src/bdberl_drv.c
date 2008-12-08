@@ -347,7 +347,7 @@ static int open_database(const char* name, DBTYPE type, PortData* data, int* dbr
 
 static int close_database(int dbref, PortData* data)
 {
-    printf("Closing %d for port %d\n", dbref, (int)data->port);
+    printf("Closing %d for port %p\n", dbref, data->port);
 
     // Remove this database from our list 
     if (del_dbref(data, dbref))

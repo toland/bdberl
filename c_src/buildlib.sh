@@ -20,7 +20,7 @@ rm -rf system db-${DB_VER}
 ## Untar and build everything
 tar -xzf db-${DB_VER}.tar.gz && \
 (cd db-${DB_VER}/build_unix && \
-    ../dist/configure --prefix=$WORKDIR --disable-shared && make && ranlib libdb-*.a && make install) && \
+    ../dist/configure --prefix=$WORKDIR --disable-shared --with-pic && make && ranlib libdb-*.a && make install) && \
 rm -rf db-${DB_VER}
 
 
