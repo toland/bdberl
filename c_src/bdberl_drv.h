@@ -17,6 +17,8 @@ static ErlDrvData bdberl_drv_start(ErlDrvPort port, char* buffer);
 
 static void bdberl_drv_stop(ErlDrvData handle);
 
+static void bdberl_drv_finish();
+
 static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd, 
                               char* inbuf, int inbuf_sz, 
                               char** outbuf, int outbuf_sz);
@@ -37,6 +39,24 @@ static void bdberl_drv_process_exit(ErlDrvData handle, ErlDrvMonitor *monitor);
 #define CMD_PUT              6
 #define CMD_PUT_ATOMIC       7
 
+/**
+ * Command status values
+ */
+#define STATUS_OK    0
+#define STATUS_ERROR 1
+
+/**
+ * Database Types (see db.h)
+ */
+#define DB_TYPE_BTREE DB_BTREE  /* 1 */
+#define DB_TYPE_HASH  DB_HASH   /* 2 */
+
+/**
+ * Error codes -- chosen so that we do not conflict with other packages, particularly
+ * db.h. We use error namespace from -29000 to -29500.
+ */
+#define ERROR_MAX_DBS  (-29000) /* System can not open any further databases  */
+
 /** 
  * Driver Entry
  */
@@ -49,7 +69,7 @@ ErlDrvEntry bdberl_drv_entry =
     NULL,			/* F_PTR ready_input, called when input descriptor ready */
     NULL,			/* F_PTR ready_output, called when output descriptor ready */
     "bdberl_drv",               /* driver_name */
-    NULL,			/* F_PTR finish, called when unloaded */
+    bdberl_drv_finish,          /* F_PTR finish, called when unloaded */
     NULL,			/* handle */
     bdberl_drv_control,		/* F_PTR control, port_command callback */
     NULL,			/* F_PTR timeout, reserved */
@@ -66,17 +86,17 @@ ErlDrvEntry bdberl_drv_entry =
     bdberl_drv_process_exit      /* F_PTR process_exit */
 };
 
-typedef struct
+typedef struct _DbRefList
 {
     unsigned int dbref;
-    struct DbRefList* next;
+    struct _DbRefList* next;
 } DbRefList;
 
 
-typedef struct 
+typedef struct _PortList
 {
     ErlDrvPort port;
-    struct PortList* next;
+    struct _PortList* next;
 } PortList;
 
 
