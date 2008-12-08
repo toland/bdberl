@@ -34,6 +34,7 @@ static void* zalloc(unsigned int size);
  */
 static DB_ENV* G_DB_ENV;
 
+
 /**
  * Global variable to track the return code from opening the DB_ENV. We track this
  * value so as to provide a useful error code when the user attempts to open the
@@ -162,8 +163,7 @@ static void bdberl_drv_finish()
 {
     // Driver is unloading -- cleanup and shut down the BDB environment. Note that we assume
     // all ports have been released and thuse all databases/txns/etc are also gone.
-    G_DB_ENV->close(G_DB_ENV, 0);
-    
+    G_DB_ENV->close(G_DB_ENV, 0);    
     driver_free(G_DATABASES);
     erl_drv_rwlock_destroy(G_DATABASES_RWLOCK);
     hive_hash_destroy(G_DATABASES_NAMES);
