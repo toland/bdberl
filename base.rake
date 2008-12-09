@@ -2,7 +2,7 @@ require 'rake/clean'
 require 'set'
 
 PWD = Dir.getwd
-BASE_DIR = File.expand_path "#{PWD}/../"
+BASE_DIR = File.expand_path "#{PWD}"
 
 SRC = FileList['src/*.erl']
 OBJ = SRC.pathmap("%{src,ebin}X.beam")
@@ -136,21 +136,8 @@ def run_tests(dir, rest = "")
 	            -noshell -s ct_run script_start -s erlang halt \
                     #{get_cover(dir)} \
 	            #{get_suites(dir)} -logdir #{dir}/logs -env TEST_DIR #{PWD}/#{dir} \
-	            #{rest}", :verbose => false
+	            #{rest}" , :verbose => false
 
-  fail if $?.exitstatus != 0 && !ENV["stop_on_fail"].nil?
-
-  File.open("#{PWD}/#{dir}/logs/raw.log", "w") do |file|
-    file.write "--- Test run on #{Time.now.to_s} ---\n"
-    file.write output
-    file.write "\n\n"
-  end
-
-  if output[/, 0 failed/] && ENV["verbose"].nil?
-    puts "==> " + output[/TEST COMPLETE,.*test cases$/]
-  else
-    puts output
-  end
 end
 
 def get_cover(dir)
