@@ -30,14 +30,15 @@ static void bdberl_drv_process_exit(ErlDrvData handle, ErlDrvMonitor *monitor);
 /**
  * Command codes
  */
-#define CMD_OPEN_DB          0
-#define CMD_CLOSE_DB         1
-#define CMD_TXN_BEGIN        2
-#define CMD_TXN_COMMIT       3
-#define CMD_TXN_ABORT        4
-#define CMD_GET              5
-#define CMD_PUT              6
-#define CMD_PUT_ATOMIC       7
+#define CMD_NONE             0
+#define CMD_OPEN_DB          1
+#define CMD_CLOSE_DB         2
+#define CMD_TXN_BEGIN        3
+#define CMD_TXN_COMMIT       4
+#define CMD_TXN_ABORT        5
+#define CMD_GET              6
+#define CMD_PUT              7
+#define CMD_PUT_ATOMIC       8
 
 /**
  * Command status values
@@ -55,7 +56,11 @@ static void bdberl_drv_process_exit(ErlDrvData handle, ErlDrvMonitor *monitor);
  * Error codes -- chosen so that we do not conflict with other packages, particularly
  * db.h. We use error namespace from -29000 to -29500.
  */
-#define ERROR_MAX_DBS  (-29000) /* System can not open any further databases  */
+#define ERROR_MAX_DBS       (-29000) /* System can not open any further databases  */
+#define ERROR_ASYNC_PENDING (-29001) /* Async operation already pending on this port */
+#define ERROR_INVALID_DBREF (-29002) /* DbRef not currently opened by this port */
+#define ERROR_TXN_OPEN      (-29003) /* Transaction already active on this port */
+#define ERROR_NO_TXN        (-29004) /* No transaction open on this port */
 
 /** 
  * Driver Entry
@@ -115,16 +120,24 @@ typedef struct
 {
     ErlDrvPort port;
 
-    DB_TXN* txn;         /* Transaction handle for this port; each port may only have 1 txn
-                          * active */
+    DB_TXN* txn;          /* Transaction handle for this port; each port may only have 1 txn
+                           * active */
 
-    int     in_flight;    /* Flag indicating if this port has an operation pending on the async
-                           * pool. */
+    int async_op;         /* Value indicating what async op is pending */
 
     DbRefList* dbrefs;    /* List of databases that this port has opened  */
 
 } PortData;
 
+
+typedef struct
+{
+    const PortData* port;       /* Port that originated this request -- READ ONLY! */
+    int rc;                     /* Return code from operation */
+    DB* db;                     /* Database to use for data storage/retrieval */
+    void* payload;              /* Packed key/value data */
+    int payload_sz;             /* Size of payload */
+} AsyncData;
 
 
 
