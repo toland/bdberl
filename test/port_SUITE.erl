@@ -10,7 +10,7 @@
 
 all() ->
 %    [test_db].
-    [test_put].
+    [test_put, test_txn].
 
 init_per_testcase(TestCase, Config) ->
     Config.
@@ -52,16 +52,26 @@ test_put(_Config) ->
     {ok, 0} = bdberl_port:open_database(P, "test1", hash),
 
     ok = bdberl_port:txn_begin(P),
-
     ok = bdberl_port:put(P, 0, akey, avalue),
-
     ok = bdberl_port:txn_commit(P),
 
-    ok = bdberl_port:txn_begin(P),
-    
-    {ok, avalue} = bdberl_port:get(P, 0, akey),
-    
+    ok = bdberl_port:txn_begin(P),    
+    {ok, avalue} = bdberl_port:get(P, 0, akey),   
     ok = bdberl_port:txn_commit(P).
+
+
+test_txn(_Config) ->
+    {ok, P} = bdberl_port:new(),
+    {ok, 0} = bdberl_port:open_database(P, "test2", btree),
+    
+    ok = bdberl_port:txn_begin(P),
+    ok = bdberl_port:put(P, 0, akey, avalue),
+    ok = bdberl_port:txn_abort(P),
+
+    ok = bdberl_port:txn_begin(P),
+    not_found = bdberl_port:get(P, 0, akey),
+    ok = bdberl_port:txn_commit(P).
+    
 
 
 

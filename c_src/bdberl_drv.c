@@ -24,7 +24,7 @@ static void do_async_put(void* arg);
 static void do_async_put_free(void* arg);
 static void do_async_get(void* arg);
 static void do_async_get_free(void* arg);
-static void do_async_commit(void* arg);
+static void do_async_txnop(void* arg);
 
 static int add_dbref(PortData* data, int dbref);
 static int del_dbref(PortData* data, int dbref);
@@ -260,6 +260,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         RETURN_INT(rc, outbuf);
     }
     case CMD_TXN_COMMIT:
+    case CMD_TXN_ABORT:
     {
         // If an async operation is pending, fail
         if (d->async_op != CMD_NONE)
@@ -278,11 +279,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         adata->port = d;
 
         // Update port data to indicate we have an operation in progress
-        d->async_op = CMD_TXN_COMMIT;
+        d->async_op = cmd;
 
-        // Schedule async operation to execute the commit
+        // Schedule async operation to execute the commit/abort
         unsigned int key = (unsigned int)d->port;
-        driver_async(d->port, &key, &do_async_commit, adata, 0);
+        driver_async(d->port, &key, &do_async_txnop, adata, 0);
 
         // Outbuf is <<Rc:32>>
         RETURN_INT(0, outbuf);
@@ -382,14 +383,20 @@ static void bdberl_drv_ready_async(ErlDrvData handle, ErlDrvThreadData thread_da
     }
     case CMD_GET:
     {
-        // Extract return code == if it's zero, send back {ok, Payload} to driver process; otherwise
-        // send a {error, Reason} tuple
+        // Extract return code == if it's zero, send back {ok, Payload} or not_found to driver
+        // process; otherwise send a {error, Reason} tuple
         AsyncData* adata = (AsyncData*)thread_data;
         if (adata->rc == 0)
         {
             ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("ok"),
                                           ERL_DRV_BUF2BINARY, (ErlDrvTermData)adata->payload, (ErlDrvUInt)adata->payload_sz,
                                           ERL_DRV_TUPLE, 2};
+            driver_output_term(d->port, response, sizeof(response) / sizeof(response[0]));
+        }
+        else if (adata->rc == DB_NOTFOUND)
+        {
+            printf("not foudn\n");
+            ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("not_found") };
             driver_output_term(d->port, response, sizeof(response) / sizeof(response[0]));
         }
         else
@@ -639,13 +646,20 @@ static void do_async_get_free(void* arg)
 }
 
 
-static void do_async_commit(void* arg)
+static void do_async_txnop(void* arg)
 {
-    printf("do_async_commit\n");
+    printf("do_async_txnop\n");
 
-    // Execute the actual commit
+    // Execute the actual commit/abort
     AsyncData* adata = (AsyncData*)arg;
-    adata->rc = adata->port->txn->commit(adata->port->txn, 0);
+    if (adata->port->async_op == CMD_TXN_COMMIT)
+    {
+        adata->rc = adata->port->txn->commit(adata->port->txn, 0);
+    }
+    else 
+    {
+        adata->rc = adata->port->txn->abort(adata->port->txn);
+    }
 }
 
 

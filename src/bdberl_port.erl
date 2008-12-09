@@ -9,7 +9,7 @@
 -export([new/0,
          open_database/3,
          close_database/2,
-         txn_begin/1, txn_commit/1,
+         txn_begin/1, txn_commit/1, txn_abort/1,
          put/4,
          get/3]).
 
@@ -37,7 +37,10 @@
 -define(ERROR_NO_TXN,        -29004).           % No transaction open on this port
 
 new() ->
-    ok = erl_ddll:load_driver(code:priv_dir(bdberl), bdberl_drv),
+    case erl_ddll:load_driver(code:priv_dir(bdberl), bdberl_drv) of
+        ok -> ok;
+        {error, permanent} -> ok               % Means that the driver is already active
+    end,
     Port = open_port({spawn, bdberl_drv}, [binary]),
     {ok, Port}.
 
@@ -84,6 +87,18 @@ txn_commit(Port) ->
         ?ERROR_ASYNC_PENDING -> {error, async_pending};
         ?ERROR_NO_TXN -> {error, no_txn}
     end.
+
+txn_abort(Port) ->
+    <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_ABORT, <<>>),
+    case Result of
+        ?ERROR_NONE -> 
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, Reason}
+            end;
+        ?ERROR_ASYNC_PENDING -> {error, async_pending};
+        ?ERROR_NO_TXN -> {error, no_txn}
+    end.
             
             
 put(Port, DbRef, Key, Value) ->
@@ -110,6 +125,7 @@ get(Port, DbRef, Key) ->
         ?ERROR_NONE ->
             receive
                 {ok, Bin} -> {ok, binary_to_term(Bin)};
+                not_found -> not_found;
                 {error, Reason} -> {error, Reason}
             end;
         ?ERROR_ASYNC_PENDING -> {error, async_pending};
