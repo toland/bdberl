@@ -9,7 +9,8 @@
 -compile(export_all).
 
 all() ->
-    [test_db].
+%    [test_db].
+    [test_put].
 
 init_per_testcase(TestCase, Config) ->
     Config.
@@ -45,4 +46,24 @@ test_db(_Config) ->
     true = port_close(P),
     true = port_close(P2).
     
+    
+test_put(_Config) ->
+    {ok, P} = bdberl_port:new(),
+    {ok, 0} = bdberl_port:open_database(P, "test1", hash),
+
+    ok = bdberl_port:txn_begin(P),
+
+    ok = bdberl_port:put(P, 0, akey, avalue),
+
+    ok = bdberl_port:txn_commit(P),
+
+    ok = bdberl_port:txn_begin(P),
+    
+    {ok, avalue} = bdberl_port:get(P, 0, akey),
+    
+    ok = bdberl_port:txn_commit(P).
+
+
+
+            
     
