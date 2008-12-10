@@ -80,8 +80,9 @@ static hive_hash*    G_DATABASES_NAMES;
 #define WRITE_UNLOCK(L) erl_drv_rwlock_rwunlock(L)
 
 #define DECODE_BYTE(_buf, _off) (_buf[_off])
-#define DECODE_INT(_buf, _off) (*((int*)_buf+_off))
-#define DECODE_STRING(_buf, _off) (char*)(_buf+_off)
+#define DECODE_INT(_buf, _off) *((int*)(_buf+(_off)))
+#define DECODE_STRING(_buf, _off) (char*)(_buf+(_off))
+#define DECODE_BLOB(_buf, _off) (void*)(_buf+(_off))
 
 #define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.bin->orig_size;
 
@@ -585,8 +586,11 @@ static int close_database(int dbref, unsigned flags, PortData* data)
 static void do_async_put(void* arg)
 {
     printf("do_async_put\n");
+
+    // Payload is: <<DbRef:32, Flags:32, KeyLen:32, Key:KeyLen, ValLen:32, Val:ValLen>>
     AsyncData* adata = (AsyncData*)arg;
-    
+    unsigned flags = DECODE_INT(adata->payload, 4);
+
     // Setup DBTs 
     DBT key;
     DBT value;
@@ -594,16 +598,15 @@ static void do_async_put(void* arg)
     memset(&value, '\0', sizeof(DBT));
 
     // Parse payload into DBTs
-    // Payload is: << DbRef:32, KeyLen:32, Key:KeyLen, ValLen:32, Val:ValLen>>
-    key.size = *((int*)(adata->payload + 4));
-    key.data = (void*)(adata->payload + 8);
-    value.size = *((int*)(adata->payload + 8 + key.size));
-    value.data = (void*)(adata->payload + 8 + key.size + 4);
+    key.size = DECODE_INT(adata->payload, 8);
+    key.data = DECODE_BLOB(adata->payload, 12);
+    value.size = DECODE_INT(adata->payload, 12 + key.size);
+    value.data = DECODE_BLOB(adata->payload, 12 + key.size + 4);
 
     // Execute the actual put -- we'll process the result back in the driver_async_ready function
     // All databases are opened with AUTO_COMMIT, so if msg->port->txn is NULL, the put will still
     // be atomic
-    adata->rc = adata->db->put(adata->db, adata->port->txn, &key, &value, 0);
+    adata->rc = adata->db->put(adata->db, adata->port->txn, &key, &value, flags);
 }
 
 static void do_async_put_free(void* arg)

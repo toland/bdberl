@@ -10,7 +10,7 @@
          open_database/3, open_database/4,
          close_database/2,
          txn_begin/1, txn_commit/1, txn_abort/1,
-         put/4,
+         put/4, put/5,
          get/3]).
 
 -define(CMD_NONE,       0).
@@ -36,7 +36,10 @@
 -define(DB_THREAD,           16#00000004).
 -define(DB_TRUNCATE,         16#00008000).
 
--define(DB_NOSYNC, 21).
+-define(DB_APPEND,      2).
+-define(DB_NODUPDATA,   19).
+-define(DB_NOOVERWRITE, 20).
+-define(DB_NOSYNC,      21).
 
 -define(STATUS_OK,    0).
 -define(STATUS_ERROR, 1).
@@ -119,11 +122,14 @@ txn_abort(Port) ->
         ?ERROR_NO_TXN -> {error, no_txn}
     end.
             
-            
 put(Port, DbRef, Key, Value) ->
+    put(Port, DbRef, Key, Value, []).
+
+put(Port, DbRef, Key, Value, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
     {ValLen, ValBin} = to_binary(Value),
-    Cmd = <<DbRef:32/native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
+    Flags = process_flags(Opts),
+    Cmd = <<DbRef:32/native, Flags:32/unsigned-native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_PUT, Cmd),
     case Result of
         ?ERROR_NONE -> 
@@ -150,27 +156,27 @@ get(Port, DbRef, Key) ->
         ?ERROR_ASYNC_PENDING -> {error, async_pending};
         ?ERROR_INVALID_DBREF -> {error, invalid_dbref}
     end.
-    
-            
-
 
 
 to_binary(Term) ->
     Bin = term_to_binary(Term),
     {size(Bin), Bin}.
 
-process_flags([Flag]) ->
-    flag_value(Flag);
+process_flags([]) ->
+    0;
 process_flags([Flag|Flags]) ->
     flag_value(Flag) bor process_flags(Flags).
 
 flag_value(Flag) ->
     case Flag of
+        append       -> ?DB_APPEND;
         auto_commit  -> ?DB_AUTO_COMMIT;
         create       -> ?DB_CREATE;
         exclusive    -> ?DB_EXCL;
         multiversion -> ?DB_MULTIVERSION;
+        no_duplicate -> ?DB_NODUPDATA;
         no_mmap      -> ?DB_NOMMAP;
+        no_overwrite -> ?DB_NOOVERWRITE;
         no_sync      -> ?DB_NOSYNC;
         readonly     -> ?DB_RDONLY;
         threaded     -> ?DB_THREAD;
