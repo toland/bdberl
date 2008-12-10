@@ -79,10 +79,10 @@ static hive_hash*    G_DATABASES_NAMES;
 #define WRITE_LOCK(L) erl_drv_rwlock_rwlock(L)
 #define WRITE_UNLOCK(L) erl_drv_rwlock_rwunlock(L)
 
-#define DECODE_BYTE(_buf, _off) (_buf[_off])
-#define DECODE_INT(_buf, _off) *((int*)(_buf+(_off)))
-#define DECODE_STRING(_buf, _off) (char*)(_buf+(_off))
-#define DECODE_BLOB(_buf, _off) (void*)(_buf+(_off))
+#define UNPACK_BYTE(_buf, _off) (_buf[_off])
+#define UNPACK_INT(_buf, _off) *((int*)(_buf+(_off)))
+#define UNPACK_STRING(_buf, _off) (char*)(_buf+(_off))
+#define UNPACK_BLOB(_buf, _off) (void*)(_buf+(_off))
 
 #define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.bin->orig_size;
 
@@ -212,9 +212,9 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     {
         // Extract the type code and filename from the inbuf
         // Inbuf is: <<Flags:32/unsigned, Type:8, Name/bytes, 0:8>>
-        unsigned flags = (unsigned) DECODE_INT(inbuf, 0);
-        DBTYPE type = (DBTYPE) DECODE_BYTE(inbuf, 4);
-        char* name = DECODE_STRING(inbuf, 5);
+        unsigned flags = (unsigned) UNPACK_INT(inbuf, 0);
+        DBTYPE type = (DBTYPE) UNPACK_BYTE(inbuf, 4);
+        char* name = UNPACK_STRING(inbuf, 5);
         int dbref;
         int status;
         int rc = open_database(name, type, flags, d, &dbref);
@@ -242,8 +242,8 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 
         // Take the provided dbref and attempt to close it
         // Inbuf is: <<DbRef:32, Flags:32/unsigned>>
-        int dbref = DECODE_INT(inbuf, 0);
-        unsigned flags = (unsigned) DECODE_INT(inbuf, 4);
+        int dbref = UNPACK_INT(inbuf, 0);
+        unsigned flags = (unsigned) UNPACK_INT(inbuf, 4);
 
         int rc = close_database(dbref, flags, d);
 
@@ -307,7 +307,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         }
 
         // Inbuf is: << DbRef:32, Rest/binary>>
-        int dbref = DECODE_INT(inbuf, 0);
+        int dbref = UNPACK_INT(inbuf, 0);
 
         // Make sure this port currently has dbref open -- if it doesn't, error out. Of note,
         // if it's in our list, we don't need to grab the RWLOCK, as we don't have to worry about
@@ -589,7 +589,7 @@ static void do_async_put(void* arg)
 
     // Payload is: <<DbRef:32, Flags:32, KeyLen:32, Key:KeyLen, ValLen:32, Val:ValLen>>
     AsyncData* adata = (AsyncData*)arg;
-    unsigned flags = DECODE_INT(adata->payload, 4);
+    unsigned flags = UNPACK_INT(adata->payload, 4);
 
     // Setup DBTs 
     DBT key;
@@ -598,10 +598,10 @@ static void do_async_put(void* arg)
     memset(&value, '\0', sizeof(DBT));
 
     // Parse payload into DBTs
-    key.size = DECODE_INT(adata->payload, 8);
-    key.data = DECODE_BLOB(adata->payload, 12);
-    value.size = DECODE_INT(adata->payload, 12 + key.size);
-    value.data = DECODE_BLOB(adata->payload, 12 + key.size + 4);
+    key.size = UNPACK_INT(adata->payload, 8);
+    key.data = UNPACK_BLOB(adata->payload, 12);
+    value.size = UNPACK_INT(adata->payload, 12 + key.size);
+    value.data = UNPACK_BLOB(adata->payload, 12 + key.size + 4);
 
     // Execute the actual put -- we'll process the result back in the driver_async_ready function
     // All databases are opened with AUTO_COMMIT, so if msg->port->txn is NULL, the put will still
