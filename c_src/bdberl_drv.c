@@ -403,7 +403,7 @@ static void bdberl_drv_ready_async(ErlDrvData handle, ErlDrvThreadData thread_da
         }
         else if (adata->rc == DB_NOTFOUND)
         {
-            printf("not foudn\n");
+            printf("not found\n");
             ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("not_found") };
             driver_output_term(d->port, response, sizeof(response) / sizeof(response[0]));
         }
