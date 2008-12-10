@@ -36,6 +36,8 @@
 -define(DB_THREAD,           16#00000004).
 -define(DB_TRUNCATE,         16#00008000).
 
+-define(DB_NOSYNC, 21).
+
 -define(STATUS_OK,    0).
 -define(STATUS_ERROR, 1).
 
@@ -73,7 +75,11 @@ open_database(Port, Name, Type, Opts) ->
     end.
 
 close_database(Port, DbRef) ->
-    Cmd = <<DbRef:32/native-integer>>,
+    close_database(Port, DbRef, []).
+
+close_database(Port, DbRef, Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<DbRef:32/native-integer, Flags:32/unsigned-native-integer>>,
     case erlang:port_control(Port, ?CMD_CLOSE_DB, Cmd) of
         <<0:32/native-integer>> ->
             {error, invalid_dbref};
@@ -165,6 +171,7 @@ flag_value(Flag) ->
         exclusive    -> ?DB_EXCL;
         multiversion -> ?DB_MULTIVERSION;
         no_mmap      -> ?DB_NOMMAP;
+        no_sync      -> ?DB_NOSYNC;
         readonly     -> ?DB_RDONLY;
         threaded     -> ?DB_THREAD;
         truncate     -> ?DB_TRUNCATE

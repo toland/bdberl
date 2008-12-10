@@ -17,8 +17,8 @@
 /**
  * Function prototypes
  */
-static int open_database(const char* name, DBTYPE type, unsigned int flags, PortData* data, int* errno);
-static int close_database(int dbref, PortData* data);
+static int open_database(const char* name, DBTYPE type, unsigned flags, PortData* data, int* errno);
+static int close_database(int dbref, unsigned flags, PortData* data);
 
 static void do_async_put(void* arg);
 static void do_async_put_free(void* arg);
@@ -182,7 +182,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
     // Close all the databases we previously opened
     while (d->dbrefs)
     {
-        close_database(d->dbrefs->dbref, d);
+        close_database(d->dbrefs->dbref, 0, d);
     }
     
     // Release the port instance data
@@ -210,7 +210,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     case CMD_OPEN_DB:
     {
         // Extract the type code and filename from the inbuf
-        // Inbuf is: <<Flags:32, Type:8, Name/bytes, 0:8>>
+        // Inbuf is: <<Flags:32/unsigned, Type:8, Name/bytes, 0:8>>
         unsigned flags = (unsigned) DECODE_INT(inbuf, 0);
         DBTYPE type = (DBTYPE) DECODE_BYTE(inbuf, 4);
         char* name = DECODE_STRING(inbuf, 5);
@@ -240,8 +240,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // TODO: If data is inflight, fail. Abort any open txns.
 
         // Take the provided dbref and attempt to close it
+        // Inbuf is: <<DbRef:32, Flags:32/unsigned>>
         int dbref = DECODE_INT(inbuf, 0);
-        int rc = close_database(dbref, d);
+        unsigned flags = (unsigned) DECODE_INT(inbuf, 4);
+
+        int rc = close_database(dbref, flags, d);
 
         // Outbuf is: <<Rc:32>>
         RETURN_INT(rc, outbuf);
@@ -538,7 +541,7 @@ static int open_database(const char* name, DBTYPE type, unsigned int flags, Port
     }
 }
 
-static int close_database(int dbref, PortData* data)
+static int close_database(int dbref, unsigned flags, PortData* data)
 {
     printf("Closing %d for port %p\n", dbref, data->port);
 
@@ -562,7 +565,7 @@ static int close_database(int dbref, PortData* data)
         {
             printf("Closing actual database for dbref %d\n", dbref);
             // Close out the BDB handle
-            database->db->close(database->db, 0);
+            database->db->close(database->db, flags);
         
             // Remove the entry from the names map
             hive_hash_remove(G_DATABASES_NAMES, database->name);
