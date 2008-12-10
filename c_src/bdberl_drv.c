@@ -290,6 +290,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         AsyncData* adata = zalloc(sizeof(AsyncData));
         adata->port = d;
 
+        if (cmd == CMD_TXN_COMMIT)
+        {
+            adata->payload = (void*) UNPACK_INT(inbuf, 0);
+        }
+
         // Update port data to indicate we have an operation in progress
         d->async_op = cmd;
 
@@ -670,7 +675,8 @@ static void do_async_txnop(void* arg)
     AsyncData* adata = (AsyncData*)arg;
     if (adata->port->async_op == CMD_TXN_COMMIT)
     {
-        adata->rc = adata->port->txn->commit(adata->port->txn, 0);
+        unsigned flags = (unsigned) adata->payload;
+        adata->rc = adata->port->txn->commit(adata->port->txn, flags);
     }
     else 
     {

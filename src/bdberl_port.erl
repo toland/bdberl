@@ -300,7 +300,12 @@ txn_begin(Port, Opts) ->
     end.
 
 txn_commit(Port) ->
-    <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_COMMIT, <<>>),
+    txn_commit(Port, []).
+
+txn_commit(Port, Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/unsigned-native>>,
+    <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_COMMIT, Cmd),
     case Result of
         ?ERROR_NONE -> 
             receive
