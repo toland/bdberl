@@ -12,12 +12,12 @@ all() ->
 %    [test_db].
     [test_put, test_txn].
 
-init_per_testcase(TestCase, Config) ->
+init_per_testcase(_TestCase, Config) ->
     Config.
 
-end_per_testcase(TestCase, _Config) ->
+end_per_testcase(_TestCase, _Config) ->
     ok.
-    
+
 
 test_db(_Config) ->
     {ok, P} = bdberl_port:new(),
@@ -71,9 +71,3 @@ test_txn(_Config) ->
     ok = bdberl_port:txn_begin(P),
     not_found = bdberl_port:get(P, 0, akey),
     ok = bdberl_port:txn_commit(P).
-    
-
-
-
-            
-    

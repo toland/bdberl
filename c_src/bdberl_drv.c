@@ -17,7 +17,7 @@
 /**
  * Function prototypes
  */
-static int open_database(const char* name, DBTYPE type, PortData* data, int* errno);
+static int open_database(const char* name, DBTYPE type, unsigned int flags, PortData* data, int* errno);
 static int close_database(int dbref, PortData* data);
 
 static void do_async_put(void* arg);
@@ -78,6 +78,8 @@ static hive_hash*    G_DATABASES_NAMES;
 #define PROMOTE_READ_LOCK(L) { erl_drv_rwlock_runlock(L); erl_drv_rwlock_rwlock(L); }
 #define WRITE_LOCK(L) erl_drv_rwlock_rwlock(L)
 #define WRITE_UNLOCK(L) erl_drv_rwlock_rwunlock(L)
+
+#define DECODE_UINT(B) (unsigned int)(B[0] + (B[1] << 8) + (B[2] << 16) + (B[3] << 24))
 
 #define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.bin->orig_size;
 
@@ -206,12 +208,13 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     case CMD_OPEN_DB:
     {
         // Extract the type code and filename from the inbuf
-        // Inbuf is: <<Type:8, Name/bytes, 0:8>>
-        DBTYPE type = (DBTYPE)((char)*inbuf);
-        char* name = (char*)(inbuf+1);
+        // Inbuf is: <<Flags:32, Type:8, Name/bytes, 0:8>>
+        unsigned int flags = DECODE_UINT(inbuf);
+        DBTYPE type = (DBTYPE)inbuf[4];
+        char* name = (char*)(inbuf+5);
         int dbref;
         int status;
-        int rc = open_database(name, type, d, &dbref);
+        int rc = open_database(name, type, flags, d, &dbref);
         if (rc == 0)
         {
             status = STATUS_OK;
@@ -420,7 +423,7 @@ static void bdberl_drv_process_exit(ErlDrvData handle, ErlDrvMonitor *monitor)
 {
 }
 
-static int open_database(const char* name, DBTYPE type, PortData* data, int* dbref_res)
+static int open_database(const char* name, DBTYPE type, unsigned int flags, PortData* data, int* dbref_res)
 {
     *dbref_res = -1;
 
@@ -502,9 +505,9 @@ static int open_database(const char* name, DBTYPE type, PortData* data, int* dbr
             WRITE_UNLOCK(G_DATABASES_RWLOCK);
             return rc;
         }
-            
+
         // Attempt to open our database
-        rc = db->open(db, 0, name, 0, type, DB_CREATE | DB_AUTO_COMMIT | DB_THREAD, 0);
+        rc = db->open(db, 0, name, 0, type, flags, 0);
         if (rc != 0)
         {
             // Failure while opening the database -- cleanup the handle, drop the lock
