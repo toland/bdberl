@@ -1,5 +1,6 @@
 *.o
 *.so
 *.beam
+*.tmproj
 c_src/system
 test/logs
