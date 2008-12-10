@@ -337,10 +337,13 @@ put(Port, DbRef, Key, Value, Opts) ->
         ?ERROR_INVALID_DBREF -> {error, invalid_dbref}
     end.
 
-
 get(Port, DbRef, Key) ->
+    get(Port, DbRef, Key, []).
+
+get(Port, DbRef, Key, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
-    Cmd = <<DbRef:32/native, KeyLen:32/native, KeyBin/bytes>>,
+    Flags = process_flags(Opts),
+    Cmd = <<DbRef:32/native, Flags:32/unsigned-native, KeyLen:32/native, KeyBin/bytes>>,
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_GET, Cmd),
     case Result of
         ?ERROR_NONE ->
@@ -365,16 +368,25 @@ process_flags([Flag|Flags]) ->
 
 flag_value(Flag) ->
     case Flag of
-        append       -> ?DB_APPEND;
-        auto_commit  -> ?DB_AUTO_COMMIT;
-        create       -> ?DB_CREATE;
-        exclusive    -> ?DB_EXCL;
-        multiversion -> ?DB_MULTIVERSION;
-        no_duplicate -> ?DB_NODUPDATA;
-        no_mmap      -> ?DB_NOMMAP;
-        no_overwrite -> ?DB_NOOVERWRITE;
-        no_sync      -> ?DB_NOSYNC;
-        readonly     -> ?DB_RDONLY;
-        threaded     -> ?DB_THREAD;
-        truncate     -> ?DB_TRUNCATE
+        append           -> ?DB_APPEND;
+        auto_commit      -> ?DB_AUTO_COMMIT;
+        consume          -> ?DB_CONSUME;
+        consume_wait     -> ?DB_CONSUME_WAIT;
+        create           -> ?DB_CREATE;
+        exclusive        -> ?DB_EXCL;
+        get_both         -> ?DB_GET_BOTH;
+        ignore_lease     -> ?DB_IGNORE_LEASE;
+        multiple         -> ?DB_MULTIPLE;
+        multiversion     -> ?DB_MULTIVERSION;
+        no_duplicate     -> ?DB_NODUPDATA;
+        no_mmap          -> ?DB_NOMMAP;
+        no_overwrite     -> ?DB_NOOVERWRITE;
+        no_sync          -> ?DB_NOSYNC;
+        read_committed   -> ?DB_READ_COMMITTED;
+        read_uncommitted -> ?DB_READ_UNCOMMITTED;
+        readonly         -> ?DB_RDONLY;
+        rmw              -> ?DB_RMW;
+        set_recno        -> ?DB_SET_RECNO;
+        threaded         -> ?DB_THREAD;
+        truncate         -> ?DB_TRUNCATE
     end.

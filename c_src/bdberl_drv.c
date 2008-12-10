@@ -618,7 +618,10 @@ static void do_async_put_free(void* arg)
 static void do_async_get(void* arg)
 {
     printf("do_async_get\n");
+
+    // Payload is: << DbRef:32, Flags:32, KeyLen:32, Key:KeyLen >>
     AsyncData* adata = (AsyncData*)arg;
+    unsigned flags = UNPACK_INT(adata->payload, 4);
     
     // Setup DBTs 
     DBT key;
@@ -627,9 +630,8 @@ static void do_async_get(void* arg)
     memset(&value, '\0', sizeof(DBT));
 
     // Parse payload into DBT
-    // Payload is: << DbRef:32, KeyLen:32, Key:KeyLen >>
-    key.size = *((int*)(adata->payload + 4));
-    key.data = (void*)(adata->payload + 8);
+    key.size = UNPACK_INT(adata->payload, 8);
+    key.data = UNPACK_BLOB(adata->payload, 12);
 
     // Allocate memory to hold the value -- hard code initial size to 4k 
     // TODO: Make this smarter!
@@ -637,13 +639,13 @@ static void do_async_get(void* arg)
     value.ulen = 4096;
     value.flags = DB_DBT_USERMEM;
     
-    int rc = adata->db->get(adata->db, adata->port->txn, &key, &value, 0);
+    int rc = adata->db->get(adata->db, adata->port->txn, &key, &value, flags);
     while (rc == DB_BUFFER_SMALL)
     {
         // Grow our value buffer and try again
         value.data = driver_realloc(value.data, value.size);
         value.ulen = value.size;
-        rc = adata->db->get(adata->db, adata->port->txn, &key, &value, 0);
+        rc = adata->db->get(adata->db, adata->port->txn, &key, &value, flags);
     }
 
     adata->payload = value.data;
