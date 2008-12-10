@@ -212,7 +212,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     {
         // Extract the type code and filename from the inbuf
         // Inbuf is: <<Flags:32/unsigned, Type:8, Name/bytes, 0:8>>
-        unsigned flags = (unsigned) UNPACK_INT(inbuf, 0);
+        unsigned flags = UNPACK_INT(inbuf, 0);
         DBTYPE type = (DBTYPE) UNPACK_BYTE(inbuf, 4);
         char* name = UNPACK_STRING(inbuf, 5);
         int dbref;
@@ -264,8 +264,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             RETURN_INT(ERROR_TXN_OPEN, outbuf);
         }
 
+        // Inbuf is <<Flags:32/unsigned>>
+        unsigned flags = UNPACK_INT(inbuf, 0);
+
         // Outbuf is <<Rc:32>>
-        int rc = G_DB_ENV->txn_begin(G_DB_ENV, 0, &(d->txn), 0);
+        int rc = G_DB_ENV->txn_begin(G_DB_ENV, 0, &(d->txn), flags);
         RETURN_INT(rc, outbuf);
     }
     case CMD_TXN_COMMIT:

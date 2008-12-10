@@ -287,7 +287,12 @@ close_database(Port, DbRef, Opts) ->
     end.
 
 txn_begin(Port) ->
-    <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_BEGIN, <<>>),
+    txn_begin(Port, []).
+
+txn_begin(Port, Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/unsigned-native>>,
+    <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_BEGIN, Cmd),
     case Result of
         ?ERROR_NONE -> ok;
         ?ERROR_ASYNC_PENDING -> {error, async_pending};
@@ -388,5 +393,11 @@ flag_value(Flag) ->
         rmw              -> ?DB_RMW;
         set_recno        -> ?DB_SET_RECNO;
         threaded         -> ?DB_THREAD;
-        truncate         -> ?DB_TRUNCATE
+        truncate         -> ?DB_TRUNCATE;
+        txn_no_sync      -> ?DB_TXN_NOSYNC;
+        txn_no_wait      -> ?DB_TXN_NOWAIT;
+        txn_snapshot     -> ?DB_TXN_SNAPSHOT;
+        txn_sync         -> ?DB_TXN_SYNC;
+        txn_wait         -> ?DB_TXN_WAIT;
+        txn_write_nosync -> ?DB_TXN_WRITE_NOSYNC
     end.
