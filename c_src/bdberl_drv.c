@@ -79,7 +79,9 @@ static hive_hash*    G_DATABASES_NAMES;
 #define WRITE_LOCK(L) erl_drv_rwlock_rwlock(L)
 #define WRITE_UNLOCK(L) erl_drv_rwlock_rwunlock(L)
 
-#define DECODE_UINT(B) (unsigned int)(B[0] + (B[1] << 8) + (B[2] << 16) + (B[3] << 24))
+#define DECODE_BYTE(_buf, _off) (_buf[_off])
+#define DECODE_INT(_buf, _off) (*((int*)_buf+_off))
+#define DECODE_STRING(_buf, _off) (char*)(_buf+_off)
 
 #define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.bin->orig_size;
 
@@ -209,9 +211,9 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     {
         // Extract the type code and filename from the inbuf
         // Inbuf is: <<Flags:32, Type:8, Name/bytes, 0:8>>
-        unsigned int flags = DECODE_UINT(inbuf);
-        DBTYPE type = (DBTYPE)inbuf[4];
-        char* name = (char*)(inbuf+5);
+        unsigned flags = (unsigned) DECODE_INT(inbuf, 0);
+        DBTYPE type = (DBTYPE) DECODE_BYTE(inbuf, 4);
+        char* name = DECODE_STRING(inbuf, 5);
         int dbref;
         int status;
         int rc = open_database(name, type, flags, d, &dbref);
@@ -238,9 +240,9 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // TODO: If data is inflight, fail. Abort any open txns.
 
         // Take the provided dbref and attempt to close it
-        int dbref = *((int*)inbuf);
+        int dbref = DECODE_INT(inbuf, 0);
         int rc = close_database(dbref, d);
-        
+
         // Outbuf is: <<Rc:32>>
         RETURN_INT(rc, outbuf);
     }
@@ -301,7 +303,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         }
 
         // Inbuf is: << DbRef:32, Rest/binary>>
-        int dbref = *((int*)inbuf);
+        int dbref = DECODE_INT(inbuf, 0);
 
         // Make sure this port currently has dbref open -- if it doesn't, error out. Of note,
         // if it's in our list, we don't need to grab the RWLOCK, as we don't have to worry about
