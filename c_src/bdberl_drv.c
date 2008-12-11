@@ -138,6 +138,10 @@ DRIVER_INIT(bdberl_drv)
         int rc = G_DB_ENV->set_flags(G_DB_ENV, DB_TIME_NOTGRANTED, 1);
         printf("TIME_NOT_GRANTED rc: %d\n", rc);
 
+        db_timeout_t to = 500 * 1000; // 500 ms
+        rc = G_DB_ENV->set_timeout(G_DB_ENV, to, DB_SET_TXN_TIMEOUT);
+        printf("DB_SET_TXN_TMEOUT rc: %d value %d\n", rc, to);
+
         // BDB is setup -- allocate structures for tracking databases
         G_DATABASES = (Database*) driver_alloc(sizeof(Database) * G_DATABASES_SIZE);
         memset(G_DATABASES, '\0', sizeof(Database) * G_DATABASES_SIZE);
@@ -495,6 +499,7 @@ static void bdberl_drv_ready_input(ErlDrvData handle, ErlDrvEvent event)
         }
 
         // Cleanup async data and mark the port as not busy
+        driver_free(adata->payload);
         driver_free(d->async_data);
         d->async_data = 0;
         d->async_op = CMD_NONE;
@@ -949,7 +954,12 @@ static void* deadlock_check(void* arg)
     while(G_DEADLOCK_CHECK_ACTIVE)
     {
         // Run the lock detection
-        G_DB_ENV->lock_detect(G_DB_ENV, 0, DB_LOCK_DEFAULT, 0);
+        int count = 0;
+        G_DB_ENV->lock_detect(G_DB_ENV, 0, DB_LOCK_DEFAULT, &count);
+        if (count > 0)
+        {
+            printf("Rejected deadlocks: %d\n", count);
+        }
 
         // TODO: Use nanosleep
         usleep(G_DEADLOCK_CHECK_INTERVAL * 1000);
