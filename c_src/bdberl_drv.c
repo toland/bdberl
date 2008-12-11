@@ -19,8 +19,8 @@
 /**
  * Function prototypes
  */
-static int open_database(const char* name, DBTYPE type, PortData* data, int* errno);
-static int close_database(int dbref, PortData* data);
+static int open_database(const char* name, DBTYPE type, unsigned flags, PortData* data, int* errno);
+static int close_database(int dbref, unsigned flags, PortData* data);
 
 static void do_async_put(void* arg);
 static void do_async_get(void* arg);
@@ -93,6 +93,11 @@ static TPool* G_TPOOL_TXNS;
 #define PROMOTE_READ_LOCK(L) erl_drv_rwlock_runlock(L); erl_drv_rwlock_rwlock(L)
 #define WRITE_LOCK(L) erl_drv_rwlock_rwlock(L)
 #define WRITE_UNLOCK(L) erl_drv_rwlock_rwunlock(L)
+
+#define UNPACK_BYTE(_buf, _off) (_buf[_off])
+#define UNPACK_INT(_buf, _off) *((int*)(_buf+(_off)))
+#define UNPACK_STRING(_buf, _off) (char*)(_buf+(_off))
+#define UNPACK_BLOB(_buf, _off) (void*)(_buf+(_off))
 
 #define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.bin->orig_size;
 
@@ -222,7 +227,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
     // Close all the databases we previously opened
     while (d->dbrefs)
     {
-        close_database(d->dbrefs->dbref, d);
+        close_database(d->dbrefs->dbref, 0, d);
     }
 
 
@@ -265,12 +270,13 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     case CMD_OPEN_DB:
     {
         // Extract the type code and filename from the inbuf
-        // Inbuf is: <<Type:8, Name/bytes, 0:8>>
-        DBTYPE type = (DBTYPE)((char)*inbuf);
-        char* name = (char*)(inbuf+1);
+        // Inbuf is: <<Flags:32/unsigned, Type:8, Name/bytes, 0:8>>
+        unsigned flags = UNPACK_INT(inbuf, 0);
+        DBTYPE type = (DBTYPE) UNPACK_BYTE(inbuf, 4);
+        char* name = UNPACK_STRING(inbuf, 5);
         int dbref;
         int status;
-        int rc = open_database(name, type, d, &dbref);
+        int rc = open_database(name, type, flags, d, &dbref);
         if (rc == 0)
         {
             status = STATUS_OK;
@@ -294,9 +300,12 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // TODO: If data is inflight, fail. Abort any open txns.
 
         // Take the provided dbref and attempt to close it
-        int dbref = *((int*)inbuf);
-        int rc = close_database(dbref, d);
-        
+        // Inbuf is: <<DbRef:32, Flags:32/unsigned>>
+        int dbref = UNPACK_INT(inbuf, 0);
+        unsigned flags = (unsigned) UNPACK_INT(inbuf, 4);
+
+        int rc = close_database(dbref, flags, d);
+
         // Outbuf is: <<Rc:32>>
         RETURN_INT(rc, outbuf);
     }
@@ -314,8 +323,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             RETURN_INT(ERROR_TXN_OPEN, outbuf);
         }
 
+        // Inbuf is <<Flags:32/unsigned>>
+        unsigned flags = UNPACK_INT(inbuf, 0);
+
         // Outbuf is <<Rc:32>>
-        int rc = G_DB_ENV->txn_begin(G_DB_ENV, 0, &(d->txn), 0);
+        int rc = G_DB_ENV->txn_begin(G_DB_ENV, 0, &(d->txn), flags);
         RETURN_INT(rc, outbuf);
     }
     case CMD_TXN_COMMIT:
@@ -336,6 +348,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Allocate operation structure
         AsyncData* adata = zalloc(sizeof(AsyncData));
         adata->port = d;
+
+        if (cmd == CMD_TXN_COMMIT)
+        {
+            adata->payload = (void*) UNPACK_INT(inbuf, 0);
+        }
 
         // Update port data to indicate we have an operation in progress
         d->async_op = cmd;
@@ -362,7 +379,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         }
 
         // Inbuf is: << DbRef:32, Rest/binary>>
-        int dbref = *((int*)inbuf);
+        int dbref = UNPACK_INT(inbuf, 0);
 
         // Make sure this port currently has dbref open -- if it doesn't, error out. Of note,
         // if it's in our list, we don't need to grab the RWLOCK, as we don't have to worry about
@@ -510,7 +527,7 @@ static void bdberl_drv_ready_input(ErlDrvData handle, ErlDrvEvent event)
     }
 }
 
-static int open_database(const char* name, DBTYPE type, PortData* data, int* dbref_res)
+static int open_database(const char* name, DBTYPE type, unsigned int flags, PortData* data, int* dbref_res)
 {
     *dbref_res = -1;
 
@@ -592,9 +609,9 @@ static int open_database(const char* name, DBTYPE type, PortData* data, int* dbr
             WRITE_UNLOCK(G_DATABASES_RWLOCK);
             return rc;
         }
-            
+
         // Attempt to open our database
-        rc = db->open(db, 0, name, 0, type, DB_CREATE | DB_AUTO_COMMIT | DB_THREAD, 0);
+        rc = db->open(db, 0, name, 0, type, flags, 0);
         if (rc != 0)
         {
             // Failure while opening the database -- cleanup the handle, drop the lock
@@ -623,7 +640,7 @@ static int open_database(const char* name, DBTYPE type, PortData* data, int* dbr
     }
 }
 
-static int close_database(int dbref, PortData* data)
+static int close_database(int dbref, unsigned flags, PortData* data)
 {
 //    printf("Closing %d for port %p\n", dbref, data->port);
 
@@ -647,7 +664,7 @@ static int close_database(int dbref, PortData* data)
         {
             printf("Closing actual database for dbref %d\n", dbref);
             // Close out the BDB handle
-            database->db->close(database->db, 0);
+            database->db->close(database->db, flags);
         
             // Remove the entry from the names map
             hive_hash_remove(G_DATABASES_NAMES, database->name);
@@ -666,9 +683,10 @@ static int close_database(int dbref, PortData* data)
 
 static void do_async_put(void* arg)
 {
+    // Payload is: <<DbRef:32, Flags:32, KeyLen:32, Key:KeyLen, ValLen:32, Val:ValLen>>
     AsyncData* adata = (AsyncData*)arg;
-//    printf("%p: do_async_put\n", adata->port->port);
-    
+    unsigned flags = UNPACK_INT(adata->payload, 4);
+
     // Setup DBTs 
     DBT key;
     DBT value;
@@ -676,16 +694,15 @@ static void do_async_put(void* arg)
     memset(&value, '\0', sizeof(DBT));
 
     // Parse payload into DBTs
-    // Payload is: << DbRef:32, KeyLen:32, Key:KeyLen, ValLen:32, Val:ValLen>>
-    key.size = *((int*)(adata->payload + 4));
-    key.data = (void*)(adata->payload + 8);
-    value.size = *((int*)(adata->payload + 8 + key.size));
-    value.data = (void*)(adata->payload + 8 + key.size + 4);
+    key.size = UNPACK_INT(adata->payload, 8);
+    key.data = UNPACK_BLOB(adata->payload, 12);
+    value.size = UNPACK_INT(adata->payload, 12 + key.size);
+    value.data = UNPACK_BLOB(adata->payload, 12 + key.size + 4);
 
     // Execute the actual put -- we'll process the result back in the driver_async_ready function
     // All databases are opened with AUTO_COMMIT, so if msg->port->txn is NULL, the put will still
     // be atomic
-    adata->rc = adata->db->put(adata->db, adata->port->txn, &key, &value, 0);
+    adata->rc = adata->db->put(adata->db, adata->port->txn, &key, &value, flags);
     
     // If any error occurs while we have a txn action, abort it
     if (adata->port->txn && adata->rc)
@@ -699,9 +716,10 @@ static void do_async_put(void* arg)
 
 static void do_async_get(void* arg)
 {
+    // Payload is: << DbRef:32, Flags:32, KeyLen:32, Key:KeyLen >>
     AsyncData* adata = (AsyncData*)arg;
-//    printf("%p: do_async_get\n", adata->port->port);
-
+    unsigned flags = UNPACK_INT(adata->payload, 4);
+    
     // Setup DBTs 
     DBT key;
     DBT value;
@@ -709,9 +727,8 @@ static void do_async_get(void* arg)
     memset(&value, '\0', sizeof(DBT));
 
     // Parse payload into DBT
-    // Payload is: << DbRef:32, KeyLen:32, Key:KeyLen >>
-    key.size = *((int*)(adata->payload + 4));
-    key.data = (void*)(adata->payload + 8);
+    key.size = UNPACK_INT(adata->payload, 8);
+    key.data = UNPACK_BLOB(adata->payload, 12);
 
     // Allocate memory to hold the value -- hard code initial size to 4k 
     // TODO: Make this smarter!
@@ -719,13 +736,13 @@ static void do_async_get(void* arg)
     value.ulen = 4096;
     value.flags = DB_DBT_USERMEM;
     
-    int rc = adata->db->get(adata->db, adata->port->txn, &key, &value, 0);
+    int rc = adata->db->get(adata->db, adata->port->txn, &key, &value, flags);
     while (rc == DB_BUFFER_SMALL)
     {
         // Grow our value buffer and try again
         value.data = driver_realloc(value.data, value.size);
         value.ulen = value.size;
-        rc = adata->db->get(adata->db, adata->port->txn, &key, &value, 0);
+        rc = adata->db->get(adata->db, adata->port->txn, &key, &value, flags);
     }
 
     adata->payload = value.data;
@@ -749,7 +766,8 @@ static void do_async_txnop(void* arg)
     // Execute the actual commit/abort
     if (adata->port->async_op == CMD_TXN_COMMIT)
     {
-        adata->rc = adata->port->txn->commit(adata->port->txn, 0);
+        unsigned flags = (unsigned) adata->payload;
+        adata->rc = adata->port->txn->commit(adata->port->txn, flags);
     }
     else 
     {
