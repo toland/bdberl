@@ -22,6 +22,8 @@
 static int open_database(const char* name, DBTYPE type, unsigned flags, PortData* data, int* errno);
 static int close_database(int dbref, unsigned flags, PortData* data);
 
+static void tune_system(int target, void* values, BinHelper* bh);
+
 static void do_async_put(void* arg);
 static void do_async_get(void* arg);
 static void do_async_txnop(void* arg);
@@ -113,7 +115,7 @@ static TPool* G_TPOOL_TXNS;
 #define UNPACK_STRING(_buf, _off) (char*)(_buf+(_off))
 #define UNPACK_BLOB(_buf, _off) (void*)(_buf+(_off))
 
-#define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.bin->orig_size;
+#define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.offset;
 
 #define RETURN_INT(val, outbuf) {             \
         BinHelper bh;                         \
@@ -137,6 +139,7 @@ DRIVER_INIT(bdberl_drv)
     // Initialize global environment -- use environment variable DB_HOME to 
     // specify where the working directory is
     db_env_create(&G_DB_ENV, 0);
+
     G_DB_ENV_ERROR = G_DB_ENV->open(G_DB_ENV, 0, flags, 0);
     if (G_DB_ENV_ERROR == 0)
     {
@@ -449,6 +452,20 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             RETURN_INT(ERROR_INVALID_DBREF, outbuf);
         }
     }        
+    case CMD_TUNE:
+    {
+        // Inbuf is: << Target:32, Values/binary >>
+        int target = UNPACK_INT(inbuf, 0);
+        char* values = UNPACK_BLOB(inbuf, 4);
+
+        // Setup a binhelper
+        BinHelper bh;
+
+        // Execute the tuning -- the result to send back to the caller is wrapped
+        // up in the provided binhelper
+        tune_system(target, values, &bh);
+        RETURN_BH(bh, outbuf);
+    }
     }
     *outbuf = 0;
     return 0;
@@ -701,6 +718,56 @@ static int close_database(int dbref, unsigned flags, PortData* data)
     }
 
     return 0;
+}
+
+/**
+ * Given a target system parameter/action adjust/return the requested value
+ */
+static void tune_system(int target, void* values, BinHelper* bh)
+{
+    switch(target) 
+    {
+    case SYSP_CACHESIZE_SET:
+    {
+        unsigned int gbytes = UNPACK_INT(values, 0);
+        unsigned int bytes = UNPACK_INT(values, 4);
+        unsigned int ncache = UNPACK_INT(values, 8);
+        int rc = G_DB_ENV->set_cachesize(G_DB_ENV, gbytes, bytes, ncache);
+        bin_helper_init(bh, 4);
+        bin_helper_push_int32(bh, rc);
+        break;
+    }
+    case SYSP_CACHESIZE_GET:
+    {
+        unsigned int gbytes = 0;
+        unsigned int bytes = 0;
+        int caches = 0;
+        int rc = G_DB_ENV->get_cachesize(G_DB_ENV, &gbytes, &bytes, &caches);
+        bin_helper_init(bh, 16);
+        bin_helper_push_int32(bh, rc);
+        bin_helper_push_int32(bh, gbytes);
+        bin_helper_push_int32(bh, bytes);
+        bin_helper_push_int32(bh, caches);
+        break;
+    }
+    case SYSP_TXN_TIMEOUT_SET:
+    {
+        unsigned int timeout = UNPACK_INT(values, 0);
+        int rc = G_DB_ENV->set_timeout(G_DB_ENV, timeout, DB_SET_TXN_TIMEOUT);
+        bin_helper_init(bh, 4);
+        bin_helper_push_int32(bh, rc);
+        break;
+    }
+    case SYSP_TXN_TIMEOUT_GET:
+    {
+        unsigned int timeout = 0;
+        int rc = G_DB_ENV->get_timeout(G_DB_ENV, &timeout, DB_SET_TXN_TIMEOUT);
+        bin_helper_init(bh, 8);
+        bin_helper_push_int32(bh, rc);
+        bin_helper_push_int32(bh, timeout);
+        break;
+    }
+    }
 }
 
 static void do_async_put(void* arg)

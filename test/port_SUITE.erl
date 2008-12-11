@@ -9,8 +9,8 @@
 -compile(export_all).
 
 all() ->
-%    [test_db].
-    [test_put].% test_txn].
+%    [test_db, test_put, test_txn, test_tune].
+    [test_tune].
 
 init_per_testcase(_TestCase, Config) ->
     Config.
@@ -71,3 +71,13 @@ test_txn(_Config) ->
     ok = bdberl_port:txn_begin(P),
     not_found = bdberl_port:get(P, 0, akey),
     ok = bdberl_port:txn_commit(P).
+
+test_tune(_Config) ->
+    {ok, P} = bdberl_port:new(),
+    
+    % Test transaction timeouts
+    {ok, 500000} = bdberl_port:get_txn_timeout(P),
+    ok = bdberl_port:set_txn_timeout(P, 250000),
+    {ok, 250000} = bdberl_port:get_txn_timeout(P).
+    
+    
