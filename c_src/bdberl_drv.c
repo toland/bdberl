@@ -39,6 +39,7 @@ static void* zalloc(unsigned int size);
 
 static void signal_port(PortData* d);
 static void* deadlock_check(void* arg);
+static void* trickle_write(void* arg);
 
 /**
  * Global instance of DB_ENV; only a single one exists per O/S process.
@@ -71,12 +72,25 @@ static int           G_DATABASES_SIZE;
 static ErlDrvRWLock* G_DATABASES_RWLOCK;
 static hive_hash*    G_DATABASES_NAMES;
 
+
 /**
- * G_DEADLOCK_* a
+ * Deadlock detector thread variables. We run a single thread per VM to detect deadlocks within
+ * our global environment. G_DEADLOCK_CHECK_INTERVAL is the time between runs in milliseconds.
  */
 static ErlDrvTid    G_DEADLOCK_THREAD;
-static unsigned int G_DEADLOCK_CHECK_ACTIVE = 1;
-static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100;
+static unsigned int G_DEADLOCK_CHECK_ACTIVE   = 1;
+static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100; /* Milliseconds between checks */
+
+
+/**
+ * Trickle writer for dirty pages. We run a single thread per VM to perform background
+ * trickling of dirty pages to disk. G_TRICKLE_INTERVAL is the time between runs in seconds.
+ */
+static ErlDrvTid    G_TRICKLE_THREAD;
+static unsigned int G_TRICKLE_ACTIVE     = 1;
+static unsigned int G_TRICKLE_INTERVAL   = 60 * 15; /* Seconds between trickle writes */
+static unsigned int G_TRICKLE_PERCENTAGE = 10;      /* Desired % of clean pages in cache */
+
 
 /**
  *
@@ -157,10 +171,14 @@ DRIVER_INIT(bdberl_drv)
         erl_drv_thread_create("bdberl_drv_deadlock_checker", &G_DEADLOCK_THREAD, 
                               &deadlock_check, 0, 0);
 
+        // Startup trickle write thread
+        erl_drv_thread_create("bdberl_drv_trickle_write", &G_TRICKLE_THREAD,
+                              &trickle_write, 0, 0);
+
         // Startup our thread pools
         // TODO: Make configurable/adjustable
-        G_TPOOL_GENERAL = bdberl_tpool_start(5);
-        G_TPOOL_TXNS    = bdberl_tpool_start(5);
+        G_TPOOL_GENERAL = bdberl_tpool_start(10);
+        G_TPOOL_TXNS    = bdberl_tpool_start(10);
     }
     else
     {
@@ -244,6 +262,10 @@ static void bdberl_drv_finish()
     // Stop the thread pools
     bdberl_tpool_stop(G_TPOOL_GENERAL);
     bdberl_tpool_stop(G_TPOOL_TXNS);
+
+    // Signal the trickle write thread to shutdown
+    G_TRICKLE_ACTIVE = 0;
+    erl_drv_thread_join(G_TRICKLE_THREAD, 0);
 
     // Signal the deadlock checker to shutdown -- then wait for it
     G_DEADLOCK_CHECK_ACTIVE = 0;
@@ -984,5 +1006,35 @@ static void* deadlock_check(void* arg)
     }
 
     printf("Deadlock checker exiting.\n");
+    return 0;
+}
+
+/**
+ * Thread function that trickle writes dirty pages to disk
+ */
+static void* trickle_write(void* arg)
+{
+    int elapsed_secs = 0;
+    while(G_TRICKLE_ACTIVE)
+    {
+        if (elapsed_secs == G_TRICKLE_INTERVAL)
+        {
+            // Enough time has passed -- time to run the trickle operation again
+            int pages_wrote = 0;
+            G_DB_ENV->memp_trickle(G_DB_ENV, G_TRICKLE_PERCENTAGE, &pages_wrote);
+            printf("Wrote %d pages to achieve %d trickle\n", pages_wrote, G_TRICKLE_PERCENTAGE);
+
+            // Reset the counter
+            elapsed_secs = 0;
+        }
+        else
+        {
+            // TODO: Use nanosleep
+            usleep(1000 * 1000);    /* Sleep for 1 second */
+            elapsed_secs++;
+        }
+    }
+
+    printf("Trickle writer exiting.\n");
     return 0;
 }
