@@ -11,7 +11,7 @@
 all() ->
     [test_thrash].
 
--define(PROCS, 2).
+-define(PROCS, 5).
 
 test_thrash(_Config) ->
     %% Spin up 15 processes (async thread pool is 10)
@@ -71,7 +71,7 @@ thrash_incr_loop(Port, Owner, Count) ->
 
 
 get_or_die(Port, DbRef, Key) ->
-    case bdberl_port:get(Port, DbRef, Key) of
+    case bdberl_port:get(Port, DbRef, Key, [rmw]) of
         not_found ->
             not_found;
         {ok, Value} ->

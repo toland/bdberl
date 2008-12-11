@@ -12,7 +12,7 @@
          txn_begin/1, txn_begin/2, 
          txn_commit/1, txn_commit/2, txn_abort/1,
          put/4, put/5,
-         get/3]).
+         get/3, get/4]).
 
 -define(CMD_NONE,       0).
 -define(CMD_OPEN_DB,    1).
