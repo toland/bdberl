@@ -27,7 +27,7 @@ new() ->
     {ok, Port}.
 
 open_database(Port, Name, Type) ->
-    open_database(Port, Name, Type, [create, auto_commit, threaded]).
+    open_database(Port, Name, Type, [create]).
 
 open_database(Port, Name, Type, Opts) ->
     %% Map database type into an integer code
@@ -35,7 +35,7 @@ open_database(Port, Name, Type, Opts) ->
         btree -> TypeCode = ?DB_TYPE_BTREE;
         hash  -> TypeCode = ?DB_TYPE_HASH
     end,
-    Flags = process_flags(Opts),
+    Flags = process_flags(lists:umerge(Opts, [auto_commit, threaded])),
     Cmd = <<Flags:32/unsigned-native-integer, TypeCode:8/native-integer, (list_to_binary(Name))/bytes, 0:8/native-integer>>,
     case erlang:port_control(Port, ?CMD_OPEN_DB, Cmd) of
         <<?STATUS_OK:8, DbRef:32/native>> ->
