@@ -103,7 +103,7 @@ TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJ
     // Generate a notification that there is work todo. 
     // TODO: I think this may not be necessary, in the case where there are already other
     // pending jobs. Not sure ATM, however, so will be on safe side
-    erl_drv_cond_signal(tpool->work_cv);
+    erl_drv_cond_broadcast(tpool->work_cv);
     UNLOCK(tpool);
     return job;
 }
