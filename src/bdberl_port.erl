@@ -157,12 +157,18 @@ to_binary(Term) ->
     Bin = term_to_binary(Term),
     {size(Bin), Bin}.
 
-
+%%
+%% Given an array of options, produce a single integer with the numeric values
+%% of the options joined with binary OR
+%%
 process_flags([]) ->
     0;
 process_flags([Flag|Flags]) ->
     flag_value(Flag) bor process_flags(Flags).
 
+%%
+%% Given an option as an atom, return the numeric value
+%%
 flag_value(Flag) ->
     case Flag of
         append           -> ?DB_APPEND;
