@@ -11,7 +11,7 @@
 all() ->
     [test_thrash].
 
--define(PROCS, 5).
+-define(PROCS, 10).
 
 test_thrash(_Config) ->
     %% Spin up 15 processes (async thread pool is 10)
