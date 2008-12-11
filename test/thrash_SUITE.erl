@@ -11,7 +11,7 @@
 all() ->
     [test_thrash].
 
--define(PROCS, 1).
+-define(PROCS, 2).
 
 test_thrash(_Config) ->
     %% Spin up 15 processes (async thread pool is 10)
@@ -43,15 +43,16 @@ thrash_run(Owner) ->
     {ok, 0} = bdberl_port:open_database(P, "thrash", btree),
 
     %% Start thrashing
-    thrash_incr_loop(P, Owner, 5000).
+    thrash_incr_loop(P, Owner, 1000).
 
 
 
 thrash_incr_loop(Port, Owner, 0) ->
     Owner ! {finished, self()};
 thrash_incr_loop(Port, Owner, Count) ->
+    ct:print("~p\n", [Count]),
     %% Choose random key
-    Key = random:uniform(12),
+    Key = random:uniform(1200),
     
     %% Start a txn that will read the current value of the key and increment by 1
     F = fun() ->
@@ -59,13 +60,14 @@ thrash_incr_loop(Port, Owner, Count) ->
                     not_found ->
                         Value = 0;
 
-                    {ok, Value} ->
+                    Value ->
                         Value
                 end,
                 put_or_die(Port, 0, Key, Value)
         end,
-    ok = do_txn(Port, F, 20),
+    ok = do_txn(Port, F, 0),
     thrash_incr_loop(Port, Owner, Count-1).
+
 
 
 get_or_die(Port, DbRef, Key) ->
@@ -76,24 +78,21 @@ get_or_die(Port, DbRef, Key) ->
             Value
     end.
 
+
 put_or_die(Port, DbRef, Key, Value) ->
     ok = bdberl_port:put(Port, DbRef, Key, Value).
 
-do_txn(Port, F, 0) ->
-    ct:print("Max retries exceeded for txn; giving up!"),
-    failed;
+
 do_txn(Port, F, Count) ->
     case bdberl_port:txn_begin(Port) of
         ok ->
             case catch(F()) of
                 {'EXIT', Reason} ->
-                    io:format("Txn failed; retrying. Last error: ~p\n", [Reason]),
-                    do_txn(Port, F, Count-1);
+                    io:format("Txn attempt ~p failed; retrying", [Count]),
+                    do_txn(Port, F, Count+1);
                 Other ->
-                    io:format("Txn success (~p): ~p\n", [Count, Other]),
                     ok = bdberl_port:txn_commit(Port)
             end;
         {error, Reason} ->
-            io:format("Txn failed(2); retrying. Last error: ~p\n", [Reason]),
-            do_txn(Port, F, Count-1)
+            do_txn(Port, F, Count+1)
     end.

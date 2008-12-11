@@ -37,6 +37,7 @@
 -define(ERROR_NO_TXN,        -29004).           % No transaction open on this port
 
 -define(ERROR_DB_LOCK_NOTGRANTED, -30993).      % Lock was busy and not granted
+-define(ERROR_DB_LOCK_DEADLOCK,   -30994).      % Deadlock occurred
 
 new() ->
     case erl_ddll:load_driver(code:priv_dir(bdberl), bdberl_drv) of
@@ -72,7 +73,6 @@ close_database(Port, DbRef) ->
 
 txn_begin(Port) ->
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_BEGIN, <<>>),
-    io:format("TXN BEGIN erl: ~p\n", [Result]),
     case decode_rc(Result) of
         ok -> ok;
         Error -> {error, {txn_begin, Error}}
@@ -148,6 +148,7 @@ decode_rc(?ERROR_ASYNC_PENDING)      -> async_pending;
 decode_rc(?ERROR_INVALID_DBREF)      -> invalid_dbref;
 decode_rc(?ERROR_NO_TXN)             -> no_txn;
 decode_rc(?ERROR_DB_LOCK_NOTGRANTED) -> lock_not_granted;
+decode_rc(?ERROR_DB_LOCK_DEADLOCK)   -> deadlock;
 decode_rc(Rc)                        -> {unknown, Rc}.
     
 

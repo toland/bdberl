@@ -176,12 +176,8 @@ static void* bdberl_tpool_main(void* arg)
             // Unlock to avoid blocking others
             UNLOCK(tpool);
 
-            printf("Invoking job\n");
-
             // Invoke the function
             (*(job->main_fn))(job->arg);
-
-            printf("Finished invoking job.\n");
 
             // Relock
             LOCK(tpool);
