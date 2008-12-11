@@ -13,11 +13,11 @@ typedef void (*TPoolJobFunc)(void* arg);
 
 typedef struct _TPoolJob
 {
-    TPoolJobFunc* main_fn;      /* Function to invoke for this job */
+    TPoolJobFunc main_fn;      /* Function to invoke for this job */
 
-    TPoolJobFunc* cancel_fn;    /* Function that gets invoked if job is canceled before it can run */
+    TPoolJobFunc cancel_fn;    /* Function that gets invoked if job is canceled before it can run */
 
-    TPoolJobFunc* arg;          /* Input data for the function */
+    void* arg;                  /* Input data for the function */
 
     unsigned int running;       /* Flag indicating if the job is currently running */
 
@@ -60,7 +60,7 @@ TPool* bdberl_tpool_start(unsigned int thread_count);
 
 void   bdberl_tpool_stop(TPool* tpool);
 
-TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc* main_fn, void* arg, TPoolJobFunc* cancel_fn);
+TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJobFunc cancel_fn);
 
 void bdberl_tpool_cancel(TPool* tpool, TPoolJob* job);
 

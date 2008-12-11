@@ -10,7 +10,7 @@
 
 all() ->
 %    [test_db].
-    [test_put, test_txn].
+    [test_put].% test_txn].
 
 init_per_testcase(TestCase, Config) ->
     Config.

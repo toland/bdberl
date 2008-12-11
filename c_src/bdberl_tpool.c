@@ -6,6 +6,7 @@
  * ------------------------------------------------------------------- */
 #include "bdberl_tpool.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,8 +46,9 @@ void bdberl_tpool_stop(TPool* tpool)
 {
     LOCK(tpool);
 
-    // Set the shutdown flag
+    // Set the shutdown flag and broadcast a notification
     tpool->shutdown = 1;
+    erl_drv_cond_broadcast(tpool->work_cv);
 
     // Clean out the queue of pending jobs -- invoke their cleanup function
 
@@ -72,7 +74,7 @@ void bdberl_tpool_stop(TPool* tpool)
     driver_free(tpool);
 }
 
-TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc* main_fn, void* arg, TPoolJobFunc* cancel_fn)
+TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJobFunc cancel_fn)
 {
     // Allocate and fill a new job structure
     TPoolJob* job = driver_alloc(sizeof(TPoolJob));
@@ -116,7 +118,10 @@ void bdberl_tpool_cancel(TPool* tpool, TPoolJob* job)
         // Job was removed from pending -- unlock and notify the job that it got canceled
         UNLOCK(tpool);
 
-        (*(job->cancel_fn))(job->arg);
+        if (job->cancel_fn)
+        {
+            (*(job->cancel_fn))(job->arg);
+        }
 
         // Delete the job structure
         driver_free(job);
@@ -171,8 +176,12 @@ static void* bdberl_tpool_main(void* arg)
             // Unlock to avoid blocking others
             UNLOCK(tpool);
 
+            printf("Invoking job\n");
+
             // Invoke the function
             (*(job->main_fn))(job->arg);
+
+            printf("Finished invoking job.\n");
 
             // Relock
             LOCK(tpool);

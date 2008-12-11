@@ -36,6 +36,8 @@
 -define(ERROR_TXN_OPEN,      -29003).           % Transaction already active on this port
 -define(ERROR_NO_TXN,        -29004).           % No transaction open on this port
 
+-define(ERROR_DB_LOCK_NOTGRANTED, -30993).      % Lock was busy and not granted
+
 new() ->
     case erl_ddll:load_driver(code:priv_dir(bdberl), bdberl_drv) of
         ok -> ok;
@@ -70,34 +72,35 @@ close_database(Port, DbRef) ->
 
 txn_begin(Port) ->
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_BEGIN, <<>>),
-    case Result of
-        ?ERROR_NONE -> ok;
-        ?ERROR_ASYNC_PENDING -> {error, async_pending};
-        ?ERROR_TXN_OPEN -> {error, txn_open}
+    io:format("TXN BEGIN erl: ~p\n", [Result]),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, {txn_begin, Error}}
     end.
+            
 
 txn_commit(Port) ->
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_COMMIT, <<>>),
-    case Result of
-        ?ERROR_NONE -> 
+    case decode_rc(Result) of
+        ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, Reason}
+                {error, Reason} -> {error, {txn_commit, decode_rc(Reason)}}
             end;
-        ?ERROR_ASYNC_PENDING -> {error, async_pending};
-        ?ERROR_NO_TXN -> {error, no_txn}
+        Error ->
+            {error, {txn_commit, Error}}
     end.
 
 txn_abort(Port) ->
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_TXN_ABORT, <<>>),
-    case Result of
-        ?ERROR_NONE -> 
+    case decode_rc(Result) of
+        ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, Reason}
+                {error, Reason} -> {error, {txn_abort, decode_rc(Reason)}}
             end;
-        ?ERROR_ASYNC_PENDING -> {error, async_pending};
-        ?ERROR_NO_TXN -> {error, no_txn}
+        Error ->
+            {error, {txn_abort, Error}}
     end.
             
             
@@ -106,14 +109,14 @@ put(Port, DbRef, Key, Value) ->
     {ValLen, ValBin} = to_binary(Value),
     Cmd = <<DbRef:32/native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_PUT, Cmd),
-    case Result of
-        ?ERROR_NONE -> 
+    case decode_rc(Result) of
+        ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, Reason}
+                {error, Reason} -> {error, {put, decode_rc(Reason)}}
             end;
-        ?ERROR_ASYNC_PENDING -> {error, async_pending};
-        ?ERROR_INVALID_DBREF -> {error, invalid_dbref}
+        Error ->
+            {error, {put, decode_rc(Error)}}
     end.
 
 
@@ -121,22 +124,38 @@ get(Port, DbRef, Key) ->
     {KeyLen, KeyBin} = to_binary(Key),
     Cmd = <<DbRef:32/native, KeyLen:32/native, KeyBin/bytes>>,
     <<Result:32/native>> = erlang:port_control(Port, ?CMD_GET, Cmd),
-    case Result of
-        ?ERROR_NONE ->
+    case decode_rc(Result) of
+        ok ->
             receive
                 {ok, Bin} -> {ok, binary_to_term(Bin)};
                 not_found -> not_found;
-                {error, Reason} -> {error, Reason}
+                {error, Reason} -> {error, {get, decode_rc(Reason)}}
             end;
-        ?ERROR_ASYNC_PENDING -> {error, async_pending};
-        ?ERROR_INVALID_DBREF -> {error, invalid_dbref}
+        Error ->
+            {error, {get, decode_rc(Error)}}
     end.
     
             
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
 
+%% 
+%% Decode a integer return value into an atom representation
+%%
+decode_rc(?ERROR_NONE)               -> ok;
+decode_rc(?ERROR_ASYNC_PENDING)      -> async_pending;
+decode_rc(?ERROR_INVALID_DBREF)      -> invalid_dbref;
+decode_rc(?ERROR_NO_TXN)             -> no_txn;
+decode_rc(?ERROR_DB_LOCK_NOTGRANTED) -> lock_not_granted;
+decode_rc(Rc)                        -> {unknown, Rc}.
+    
 
-
+%%
+%% Convert a term into a binary, returning a tuple with the binary and the length of the binary
+%%
 to_binary(Term) ->
     Bin = term_to_binary(Term),
     {size(Bin), Bin}.
+
 
