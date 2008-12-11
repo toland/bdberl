@@ -38,7 +38,8 @@ static void bdberl_drv_ready_input(ErlDrvData handle, ErlDrvEvent ev);
 #define CMD_TXN_ABORT        5
 #define CMD_GET              6
 #define CMD_PUT              7
-#define CMD_PUT_ATOMIC       8
+#define CMD_TUNE             8
+
 
 /**
  * Command status values
@@ -61,6 +62,19 @@ static void bdberl_drv_ready_input(ErlDrvData handle, ErlDrvEvent ev);
 #define ERROR_INVALID_DBREF (-29002) /* DbRef not currently opened by this port */
 #define ERROR_TXN_OPEN      (-29003) /* Transaction already active on this port */
 #define ERROR_NO_TXN        (-29004) /* No transaction open on this port */
+
+
+/**
+ * Tunable system parameters/actions
+ */
+#define SYSP_CACHESIZE_SET               0
+#define SYSP_CACHESIZE_GET               1
+#define SYSP_TXN_TIMEOUT_SET             2
+#define SYSP_TXN_TIMEOUT_GET             3
+#define SYSP_TXN_TIMEOUT             1
+#define SYSP_DEADLOCK_CHECK_INTERVAL 2
+#define SYSP_TRICKLE_INTERVAL        3
+#define SYSP_TRICKLE_PERCENTAGE      4
 
 /** 
  * Driver Entry

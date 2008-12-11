@@ -22,6 +22,8 @@
 static int open_database(const char* name, DBTYPE type, unsigned flags, PortData* data, int* errno);
 static int close_database(int dbref, unsigned flags, PortData* data);
 
+static void tune_system(int target, void* values, BinHelper* bh);
+
 static void do_async_put(void* arg);
 static void do_async_get(void* arg);
 static void do_async_txnop(void* arg);
@@ -39,6 +41,7 @@ static void* zalloc(unsigned int size);
 
 static void signal_port(PortData* d);
 static void* deadlock_check(void* arg);
+static void* trickle_write(void* arg);
 
 /**
  * Global instance of DB_ENV; only a single one exists per O/S process.
@@ -71,12 +74,25 @@ static int           G_DATABASES_SIZE;
 static ErlDrvRWLock* G_DATABASES_RWLOCK;
 static hive_hash*    G_DATABASES_NAMES;
 
+
 /**
- * G_DEADLOCK_* a
+ * Deadlock detector thread variables. We run a single thread per VM to detect deadlocks within
+ * our global environment. G_DEADLOCK_CHECK_INTERVAL is the time between runs in milliseconds.
  */
 static ErlDrvTid    G_DEADLOCK_THREAD;
-static unsigned int G_DEADLOCK_CHECK_ACTIVE = 1;
-static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100;
+static unsigned int G_DEADLOCK_CHECK_ACTIVE   = 1;
+static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100; /* Milliseconds between checks */
+
+
+/**
+ * Trickle writer for dirty pages. We run a single thread per VM to perform background
+ * trickling of dirty pages to disk. G_TRICKLE_INTERVAL is the time between runs in seconds.
+ */
+static ErlDrvTid    G_TRICKLE_THREAD;
+static unsigned int G_TRICKLE_ACTIVE     = 1;
+static unsigned int G_TRICKLE_INTERVAL   = 60 * 15; /* Seconds between trickle writes */
+static unsigned int G_TRICKLE_PERCENTAGE = 10;      /* Desired % of clean pages in cache */
+
 
 /**
  *
@@ -99,7 +115,7 @@ static TPool* G_TPOOL_TXNS;
 #define UNPACK_STRING(_buf, _off) (char*)(_buf+(_off))
 #define UNPACK_BLOB(_buf, _off) (void*)(_buf+(_off))
 
-#define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.bin->orig_size;
+#define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.offset;
 
 #define RETURN_INT(val, outbuf) {             \
         BinHelper bh;                         \
@@ -123,6 +139,7 @@ DRIVER_INIT(bdberl_drv)
     // Initialize global environment -- use environment variable DB_HOME to 
     // specify where the working directory is
     db_env_create(&G_DB_ENV, 0);
+
     G_DB_ENV_ERROR = G_DB_ENV->open(G_DB_ENV, 0, flags, 0);
     if (G_DB_ENV_ERROR == 0)
     {
@@ -157,10 +174,14 @@ DRIVER_INIT(bdberl_drv)
         erl_drv_thread_create("bdberl_drv_deadlock_checker", &G_DEADLOCK_THREAD, 
                               &deadlock_check, 0, 0);
 
+        // Startup trickle write thread
+        erl_drv_thread_create("bdberl_drv_trickle_write", &G_TRICKLE_THREAD,
+                              &trickle_write, 0, 0);
+
         // Startup our thread pools
         // TODO: Make configurable/adjustable
-        G_TPOOL_GENERAL = bdberl_tpool_start(5);
-        G_TPOOL_TXNS    = bdberl_tpool_start(5);
+        G_TPOOL_GENERAL = bdberl_tpool_start(10);
+        G_TPOOL_TXNS    = bdberl_tpool_start(10);
     }
     else
     {
@@ -244,6 +265,10 @@ static void bdberl_drv_finish()
     // Stop the thread pools
     bdberl_tpool_stop(G_TPOOL_GENERAL);
     bdberl_tpool_stop(G_TPOOL_TXNS);
+
+    // Signal the trickle write thread to shutdown
+    G_TRICKLE_ACTIVE = 0;
+    erl_drv_thread_join(G_TRICKLE_THREAD, 0);
 
     // Signal the deadlock checker to shutdown -- then wait for it
     G_DEADLOCK_CHECK_ACTIVE = 0;
@@ -427,6 +452,20 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             RETURN_INT(ERROR_INVALID_DBREF, outbuf);
         }
     }        
+    case CMD_TUNE:
+    {
+        // Inbuf is: << Target:32, Values/binary >>
+        int target = UNPACK_INT(inbuf, 0);
+        char* values = UNPACK_BLOB(inbuf, 4);
+
+        // Setup a binhelper
+        BinHelper bh;
+
+        // Execute the tuning -- the result to send back to the caller is wrapped
+        // up in the provided binhelper
+        tune_system(target, values, &bh);
+        RETURN_BH(bh, outbuf);
+    }
     }
     *outbuf = 0;
     return 0;
@@ -679,6 +718,56 @@ static int close_database(int dbref, unsigned flags, PortData* data)
     }
 
     return 0;
+}
+
+/**
+ * Given a target system parameter/action adjust/return the requested value
+ */
+static void tune_system(int target, void* values, BinHelper* bh)
+{
+    switch(target) 
+    {
+    case SYSP_CACHESIZE_SET:
+    {
+        unsigned int gbytes = UNPACK_INT(values, 0);
+        unsigned int bytes = UNPACK_INT(values, 4);
+        unsigned int ncache = UNPACK_INT(values, 8);
+        int rc = G_DB_ENV->set_cachesize(G_DB_ENV, gbytes, bytes, ncache);
+        bin_helper_init(bh, 4);
+        bin_helper_push_int32(bh, rc);
+        break;
+    }
+    case SYSP_CACHESIZE_GET:
+    {
+        unsigned int gbytes = 0;
+        unsigned int bytes = 0;
+        int caches = 0;
+        int rc = G_DB_ENV->get_cachesize(G_DB_ENV, &gbytes, &bytes, &caches);
+        bin_helper_init(bh, 16);
+        bin_helper_push_int32(bh, rc);
+        bin_helper_push_int32(bh, gbytes);
+        bin_helper_push_int32(bh, bytes);
+        bin_helper_push_int32(bh, caches);
+        break;
+    }
+    case SYSP_TXN_TIMEOUT_SET:
+    {
+        unsigned int timeout = UNPACK_INT(values, 0);
+        int rc = G_DB_ENV->set_timeout(G_DB_ENV, timeout, DB_SET_TXN_TIMEOUT);
+        bin_helper_init(bh, 4);
+        bin_helper_push_int32(bh, rc);
+        break;
+    }
+    case SYSP_TXN_TIMEOUT_GET:
+    {
+        unsigned int timeout = 0;
+        int rc = G_DB_ENV->get_timeout(G_DB_ENV, &timeout, DB_SET_TXN_TIMEOUT);
+        bin_helper_init(bh, 8);
+        bin_helper_push_int32(bh, rc);
+        bin_helper_push_int32(bh, timeout);
+        break;
+    }
+    }
 }
 
 static void do_async_put(void* arg)
@@ -984,5 +1073,35 @@ static void* deadlock_check(void* arg)
     }
 
     printf("Deadlock checker exiting.\n");
+    return 0;
+}
+
+/**
+ * Thread function that trickle writes dirty pages to disk
+ */
+static void* trickle_write(void* arg)
+{
+    int elapsed_secs = 0;
+    while(G_TRICKLE_ACTIVE)
+    {
+        if (elapsed_secs == G_TRICKLE_INTERVAL)
+        {
+            // Enough time has passed -- time to run the trickle operation again
+            int pages_wrote = 0;
+            G_DB_ENV->memp_trickle(G_DB_ENV, G_TRICKLE_PERCENTAGE, &pages_wrote);
+            printf("Wrote %d pages to achieve %d trickle\n", pages_wrote, G_TRICKLE_PERCENTAGE);
+
+            // Reset the counter
+            elapsed_secs = 0;
+        }
+        else
+        {
+            // TODO: Use nanosleep
+            usleep(1000 * 1000);    /* Sleep for 1 second */
+            elapsed_secs++;
+        }
+    }
+
+    printf("Trickle writer exiting.\n");
     return 0;
 }

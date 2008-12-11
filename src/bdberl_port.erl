@@ -11,6 +11,8 @@
          close_database/2,
          txn_begin/1, txn_begin/2, 
          txn_commit/1, txn_commit/2, txn_abort/1,
+         get_cache_size/1, set_cache_size/4,
+         get_txn_timeout/1, set_txn_timeout/2,
          put/4, put/5,
          get/3, get/4]).
 
@@ -133,6 +135,49 @@ get(Port, DbRef, Key, Opts) ->
         Error ->
             {error, {get, decode_rc(Error)}}
     end.
+
+get_cache_size(Port) ->    
+    Cmd = <<?SYSP_CACHESIZE_GET:32/native>>,
+    <<Result:32/signed-native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>> = 
+        erlang:port_control(Port, ?CMD_TUNE, Cmd),
+    case Result of
+        0 ->
+            {ok, Gbytes, Bytes, Ncaches};
+        _ ->
+            {error, Result}
+    end.
+
+set_cache_size(Port, Gbytes, Bytes, Ncaches) ->
+    Cmd = <<?SYSP_CACHESIZE_SET:32/native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(Port, ?CMD_TUNE, Cmd),
+    case Result of
+        0 ->
+            ok;
+        _ ->
+            {error, Result}
+    end.
+    
+
+get_txn_timeout(Port) ->    
+    Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/native>>,
+    <<Result:32/signed-native, Timeout:32/native>> = erlang:port_control(Port, ?CMD_TUNE, Cmd),
+    case Result of
+        0 ->
+            {ok, Timeout};
+        _ ->
+            {error, Result}
+    end.
+
+set_txn_timeout(Port, Timeout) ->
+    Cmd = <<?SYSP_TXN_TIMEOUT_SET:32/native, Timeout:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(Port, ?CMD_TUNE, Cmd),
+    case Result of
+        0 ->
+            ok;
+        _ ->
+            {error, Result}
+    end.
+    
     
             
 %% ====================================================================

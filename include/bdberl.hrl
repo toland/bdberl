@@ -13,10 +13,15 @@
 -define(CMD_TXN_ABORT,  5).
 -define(CMD_GET,        6).
 -define(CMD_PUT,        7).
--define(CMD_PUT_ATOMIC, 8).
+-define(CMD_TUNE,       8).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).
+
+-define(SYSP_CACHESIZE_SET,   0).
+-define(SYSP_CACHESIZE_GET,   1).
+-define(SYSP_TXN_TIMEOUT_SET, 2).
+-define(SYSP_TXN_TIMEOUT_GET, 3).
 
 -define(STATUS_OK,    0).
 -define(STATUS_ERROR, 1).
