@@ -12,12 +12,17 @@
 
 all() ->
     [open_should_create_database_if_none_exists,
+     open_should_allow_opening_multiple_databases,
+     close_should_fail_with_invalid_db_handle,
      get_should_fail_when_getting_a_nonexistant_record,
      get_should_return_a_value_when_getting_a_valid_record,
+     put_should_succeed_with_manual_transaction,
+     put_should_rollback_with_failed_manual_transaction,
      transaction_should_commit_on_success,
      transaction_should_abort_on_exception,
      transaction_should_abort_on_user_abort,
-     update_should_save_value_if_successful].
+     update_should_save_value_if_successful,
+     port_should_tune_transaction_timeouts].
 
 
 init_per_testcase(_TestCase, Config) ->
@@ -32,6 +37,13 @@ end_per_testcase(_TestCase, Config) ->
 open_should_create_database_if_none_exists(_Config) ->
     true = filelib:is_file("api_test.db").
 
+open_should_allow_opening_multiple_databases(_Config) ->
+    %% Open up another db -- should use dbref 1 as that's the first available
+    {ok, 1} = bdberl:open("api_test2.db", btree).
+
+close_should_fail_with_invalid_db_handle(_Config) ->
+    {error, invalid_db} = bdberl:close(21000).
+
 get_should_fail_when_getting_a_nonexistant_record(Config) ->
     not_found = bdberl:get(?config(db, Config), bad_key).
 
@@ -39,6 +51,20 @@ get_should_return_a_value_when_getting_a_valid_record(Config) ->
     Db = ?config(db, Config),
     ok = bdberl:put(Db, mykey, avalue),
     {ok, avalue} = bdberl:get(Db, mykey).
+
+put_should_succeed_with_manual_transaction(Config) ->
+    Db = ?config(db, Config),
+    ok = bdberl:txn_begin(),
+    ok = bdberl:put(Db, mykey, avalue),
+    ok = bdberl:txn_commit(),
+    {ok, avalue} = bdberl:get(Db, mykey).
+
+put_should_rollback_with_failed_manual_transaction(Config) ->
+    Db = ?config(db, Config),
+    ok = bdberl:txn_begin(),
+    ok = bdberl:put(Db, mykey, avalue),
+    ok = bdberl:txn_abort(),
+    not_found = bdberl:get(Db, mykey).
 
 transaction_should_commit_on_success(Config) ->
     Db = ?config(db, Config),
@@ -81,3 +107,8 @@ update_should_save_value_if_successful(Config) ->
     {ok, newvalue} = bdberl:update(Db, mykey, F),
     {ok, newvalue} = bdberl:get(Db, mykey).
 
+port_should_tune_transaction_timeouts(_Config) ->
+    %% Test transaction timeouts
+    {ok, 500000} = bdberl:get_txn_timeout(),
+    ok = bdberl:set_txn_timeout(250000),
+    {ok, 250000} = bdberl:get_txn_timeout().
