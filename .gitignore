@@ -4,3 +4,4 @@
 *.tmproj
 c_src/system
 test/logs
+test/test.cover

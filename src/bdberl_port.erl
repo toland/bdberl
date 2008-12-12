@@ -8,7 +8,7 @@
 
 -export([new/0,
          open_database/3, open_database/4,
-         close_database/2,
+         close_database/2, close_database/3,
          txn_begin/1, txn_begin/2, 
          txn_commit/1, txn_commit/2, txn_abort/1,
          get_cache_size/1, set_cache_size/4,
