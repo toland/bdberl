@@ -14,7 +14,9 @@
          get_txn_timeout/0, set_txn_timeout/1,
          transaction/1,
          put/3, put/4,
+         put_r/3, put_r/4,
          get/2, get/3,
+         get_r/2, get_r/3,
          update/3]).
 
 -include("bdberl.hrl").
@@ -126,6 +128,15 @@ put(Db, Key, Value, Opts) ->
             {error, {put, decode_rc(Error)}}
     end.
 
+put_r(Db, Key, Value) ->
+    put(Db, Key, Value, []).
+
+put_r(Db, Key, Value, Opts) ->
+    case put(Db, Key, Value, Opts) of
+        ok -> ok;
+        Error -> throw(Error)
+    end.
+
 get(Db, Key) ->
     get(Db, Key, []).
 
@@ -143,6 +154,16 @@ get(Db, Key, Opts) ->
             end;
         Error ->
             {error, {get, decode_rc(Error)}}
+    end.
+
+get_r(Db, Key) ->
+    get_r(Db, Key, []).
+
+get_r(Db, Key, Opts) ->
+    case get(Db, Key, Opts) of
+        {ok, Value} -> {ok, Value};
+        not_found   -> not_found;
+        Error       -> throw(Error)
     end.
 
 update(Db, Key, Fun) ->
