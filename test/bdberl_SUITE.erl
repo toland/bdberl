@@ -22,6 +22,7 @@ all() ->
      transaction_should_abort_on_exception,
      transaction_should_abort_on_user_abort,
      update_should_save_value_if_successful,
+     update_should_accept_args_for_fun,
      port_should_tune_transaction_timeouts].
 
 
@@ -106,6 +107,17 @@ update_should_save_value_if_successful(Config) ->
 
     {ok, newvalue} = bdberl:update(Db, mykey, F),
     {ok, newvalue} = bdberl:get(Db, mykey).
+
+update_should_accept_args_for_fun(Config) ->
+    Db = ?config(db, Config),
+    ok = bdberl:put(Db, mykey, avalue),
+
+    F = fun(_Key, _Value, Args) ->
+            look_at_me = Args, % This is all we are interested in
+            newvalue
+        end,
+
+    {ok, newvalue} = bdberl:update(Db, mykey, F, look_at_me).
 
 port_should_tune_transaction_timeouts(_Config) ->
     %% Test transaction timeouts

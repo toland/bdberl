@@ -17,7 +17,7 @@
          put_r/3, put_r/4,
          get/2, get/3,
          get_r/2, get_r/3,
-         update/3]).
+         update/3, update/4]).
 
 -include("bdberl.hrl").
 
@@ -167,9 +167,15 @@ get_r(Db, Key, Opts) ->
     end.
 
 update(Db, Key, Fun) ->
+    update(Db, Key, Fun, undefined).
+
+update(Db, Key, Fun, Args) ->
     F = fun() ->
             {ok, Value} = get(Db, Key, [rmw]),
-            NewValue = Fun(Key, Value),
+            NewValue = case Args of
+                           undefined -> Fun(Key, Value);
+                           Args      -> Fun(Key, Value, Args)
+                       end,
             ok = put(Db, Key, NewValue),
             NewValue
         end,
