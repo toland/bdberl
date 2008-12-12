@@ -39,60 +39,42 @@ thrash_run(Owner) ->
     random:seed(A1, A2, A3),
 
     %% Open up a port and database
-    {ok, P} = bdberl_port:new(),
-    {ok, 0} = bdberl_port:open_database(P, "thrash", btree),
+    {ok, 0} = bdberl:open("thrash", btree),
 
     %% Start thrashing
-    thrash_incr_loop(P, Owner, 1000).
+    thrash_incr_loop(Owner, 1000).
 
-
-
-thrash_incr_loop(Port, Owner, 0) ->
+thrash_incr_loop(Owner, 0) ->
     Owner ! {finished, self()};
-thrash_incr_loop(Port, Owner, Count) ->
+thrash_incr_loop(Owner, Count) ->
     ct:print("~p\n", [Count]),
     %% Choose random key
     Key = random:uniform(1200),
     
     %% Start a txn that will read the current value of the key and increment by 1
     F = fun() ->
-                case get_or_die(Port, 0, Key) of
+                case bdberl:get(0, Key, [rmw]) of
                     not_found ->
                         Value = 0;
 
-                    Value ->
+                    {ok, Value} ->
                         Value
                 end,
-                put_or_die(Port, 0, Key, Value)
+                ok = bdberl:put(0, Key, Value)
         end,
-    ok = do_txn(Port, F, 0),
-    thrash_incr_loop(Port, Owner, Count-1).
+    ok = do_txn(F, 0),
+    thrash_incr_loop(Owner, Count-1).
 
-
-
-get_or_die(Port, DbRef, Key) ->
-    case bdberl_port:get(Port, DbRef, Key, [rmw]) of
-        not_found ->
-            not_found;
-        {ok, Value} ->
-            Value
-    end.
-
-
-put_or_die(Port, DbRef, Key, Value) ->
-    ok = bdberl_port:put(Port, DbRef, Key, Value).
-
-
-do_txn(Port, F, Count) ->
-    case bdberl_port:txn_begin(Port) of
+do_txn(F, Count) ->
+    case bdberl:txn_begin() of
         ok ->
             case catch(F()) of
-                {'EXIT', Reason} ->
+                {'EXIT', _Reason} ->
                     io:format("Txn attempt ~p failed; retrying", [Count]),
-                    do_txn(Port, F, Count+1);
-                Other ->
-                    ok = bdberl_port:txn_commit(Port)
+                    do_txn(F, Count+1);
+                _Other ->
+                    ok = bdberl:txn_commit()
             end;
-        {error, Reason} ->
-            do_txn(Port, F, Count+1)
+        {error, _Reason} ->
+            do_txn(F, Count+1)
     end.
