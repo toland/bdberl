@@ -234,7 +234,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
     {
         printf("Cancelling async job for port: %p\n", d->port);
         bdberl_tpool_cancel(d->async_pool, d->async_job);
-        driver_select(d->port, (ErlDrvEvent)d->pipe_fds[0], DO_READ, 0);
+        driver_select(d->port, (ErlDrvEvent)(size_t)d->pipe_fds[0], DO_READ, 0);
         printf("Canceled async job for port: %p\n", d->port);
     }
 
@@ -376,7 +376,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 
         if (cmd == CMD_TXN_COMMIT)
         {
-            adata->payload = (void*) UNPACK_INT(inbuf, 0);
+            adata->payload = (void*)(size_t)UNPACK_INT(inbuf, 0);
         }
 
         // Update port data to indicate we have an operation in progress
@@ -389,7 +389,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 
         // Watch for events on the output pipe
         // TODO: Can we do this just once ?!
-        driver_select(d->port, (ErlDrvEvent)d->pipe_fds[0], DO_READ, 1);
+        driver_select(d->port, (ErlDrvEvent)(size_t)d->pipe_fds[0], DO_READ, 1);
 
         // Outbuf is <<Rc:32>>
         RETURN_INT(0, outbuf);
@@ -440,7 +440,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 
             // Watch for events on the output pipe
             // TODO: Can we do this just once ?!
-            driver_select(d->port, (ErlDrvEvent)d->pipe_fds[0], DO_READ, 1);
+            driver_select(d->port, (ErlDrvEvent)(size_t)d->pipe_fds[0], DO_READ, 1);
 
             // Let caller know that the operation is in progress
             // Outbuf is: <<0:32>>
@@ -479,7 +479,7 @@ static void bdberl_drv_ready_input(ErlDrvData handle, ErlDrvEvent event)
 
     // Empty out the queue
     int readbuf;
-    while (read((int)event, &readbuf, sizeof(readbuf)) > 0) { ; }
+    while (read((size_t)event, &readbuf, sizeof(readbuf)) > 0) { ; }
     driver_select(d->port, event, DO_READ, 0);
 
     // The async op has completed running on the thread pool -- process the results
@@ -855,7 +855,7 @@ static void do_async_txnop(void* arg)
     // Execute the actual commit/abort
     if (adata->port->async_op == CMD_TXN_COMMIT)
     {
-        unsigned flags = (unsigned) adata->payload;
+        unsigned flags = (unsigned)(size_t)adata->payload;
         adata->rc = adata->port->txn->commit(adata->port->txn, flags);
     }
     else 
