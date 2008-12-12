@@ -1,7 +1,7 @@
 {application, bdberl,
  [{description, "Berkeley DB Erlang Driver"},
   {vsn, "1"},
-  {modules, [ bdberl_port, bdberl ]},
+  {modules, [ bdberl ]},
   {registered, []},
   {applications, [kernel, 
                   stdlib]},
