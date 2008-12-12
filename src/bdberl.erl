@@ -6,8 +6,7 @@
 %% -------------------------------------------------------------------
 -module(bdberl).
 
--export([init/0,
-         open/2, open/3,
+-export([open/2, open/3,
          close/1, close/2,
          txn_begin/0, txn_begin/1, 
          txn_commit/0, txn_commit/1, txn_abort/0,
@@ -20,14 +19,6 @@
 
 -include("bdberl.hrl").
 
-init() ->
-    case erl_ddll:load_driver(code:priv_dir(bdberl), bdberl_drv) of
-        ok -> ok;
-        {error, permanent} -> ok               % Means that the driver is already active
-    end,
-    Port = open_port({spawn, bdberl_drv}, [binary]),
-    erlang:put(bdb_port, Port),
-    ok.
 
 open(Name, Type) ->
     open(Name, Type, [create]).
@@ -210,14 +201,20 @@ set_txn_timeout(Timeout) ->
 %% Internal functions
 %% ====================================================================
 
+init() ->
+    case erl_ddll:load_driver(code:priv_dir(bdberl), bdberl_drv) of
+        ok -> ok;
+        {error, permanent} -> ok               % Means that the driver is already active
+    end,
+    Port = open_port({spawn, bdberl_drv}, [binary]),
+    erlang:put(bdb_port, Port),
+    Port.
+
 get_port() ->
     case erlang:get(bdb_port) of
-        undefined -> 
-            ok = init(),
-            erlang:get(bdb_port);
-        Port ->
-            Port
-    end.    
+        undefined -> init();
+        Port      -> Port
+    end.
 
 %% 
 %% Decode a integer return value into an atom representation

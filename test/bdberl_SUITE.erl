@@ -20,13 +20,6 @@ all() ->
      update_should_save_value_if_successful].
 
 
-init_per_suite(Config) ->
-    ok = bdberl:init(),
-    Config.
-
-end_per_suite(_Config) ->
-    ok.
-
 init_per_testcase(_TestCase, Config) ->
     {ok, Db} = bdberl:open("api_test.db", btree, [create, exclusive]),
     [{db, Db}|Config].
