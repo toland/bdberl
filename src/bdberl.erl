@@ -120,7 +120,7 @@ put(Db, Key, Value, Opts) ->
     do_put(?CMD_PUT, Db, Key, Value, Opts).
 
 put_r(Db, Key, Value) ->
-    put(Db, Key, Value, []).
+    put_r(Db, Key, Value, []).
 
 put_r(Db, Key, Value, Opts) ->
     case put(Db, Key, Value, Opts) of
