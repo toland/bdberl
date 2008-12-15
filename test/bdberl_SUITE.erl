@@ -24,7 +24,8 @@ all() ->
      update_should_save_value_if_successful,
      update_should_accept_args_for_fun,
      port_should_tune_transaction_timeouts,
-     cursor_should_iterate, cursor_should_fail_if_not_open].
+     cursor_should_iterate, cursor_should_fail_if_not_open,
+     put_commit_should_end_txn].
 
 
 init_per_testcase(_TestCase, Config) ->
@@ -157,5 +158,17 @@ cursor_should_fail_if_not_open(Config) ->
     {error, no_cursor} = bdberl:cursor_current(),
     {error, no_cursor} = bdberl:cursor_close().
 
-
+put_commit_should_end_txn(Config) ->
+    Db = ?config(db, Config),
+    
+    %% Start a transaction
+    ok = bdberl:txn_begin(),
+    ok = bdberl:put_commit(Db, key1, value1),
+    
+    %% Commit should now fail since the txn is done
+    {error, {txn_commit, no_txn}} = bdberl:txn_commit(),
+    
+    %% Verify data got committed
+    {ok, value1} = bdberl:get(Db, key1).
+    
 

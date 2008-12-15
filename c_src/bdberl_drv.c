@@ -419,8 +419,15 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     }
     case CMD_PUT:
     case CMD_GET:
+    case CMD_PUT_COMMIT:
     {
         FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Put/commit requires a transaction to be active
+        if (cmd == CMD_PUT_COMMIT && (!d->txn))
+        {
+            RETURN_INT(ERROR_NO_TXN, outbuf);
+        }
 
         // Inbuf is: << DbRef:32, Rest/binary>>
         int dbref = UNPACK_INT(inbuf, 0);
@@ -445,7 +452,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             // Mark the port as busy and then schedule the appropriate async operation
             d->async_op = cmd;
             TPoolJobFunc fn;
-            if (cmd == CMD_PUT)
+            if (cmd == CMD_PUT || cmd == CMD_PUT_COMMIT)
             {
                 fn = &do_async_put;
             }
@@ -790,6 +797,15 @@ static void do_async_put(void* arg)
     if (d->txn && rc)
     {
         d->txn->abort(d->txn);
+        d->txn = 0;
+    }
+    else if (d->txn && d->async_op == CMD_PUT_COMMIT)
+    {
+        // Put needs to be followed by a commit -- saves us another pass through the driver and
+        // threadpool queues
+        rc = d->txn->commit(d->txn, 0);
+
+        // Regardless of the txn commit outcome, we still need to invalidate the transaction
         d->txn = 0;
     }
 

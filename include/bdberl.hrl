@@ -19,6 +19,7 @@
 -define(CMD_CURSOR_NEXT,  11).
 -define(CMD_CURSOR_PREV,  12).
 -define(CMD_CURSOR_CLOSE, 13).
+-define(CMD_PUT_COMMIT,   14).
 
 
 -define(DB_TYPE_BTREE, 1).

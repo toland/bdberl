@@ -15,6 +15,8 @@
          transaction/1,
          put/3, put/4,
          put_r/3, put_r/4,
+         put_commit/3, put_commit/4, 
+         put_commit_r/3, put_commit_r/4,
          get/2, get/3,
          get_r/2, get_r/3,
          update/3, update/4,
@@ -61,7 +63,7 @@ txn_begin() ->
 txn_begin(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/unsigned-native>>,
-    <<Result:32/native>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
+    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
     case decode_rc(Result) of
         ok -> ok;
         Error -> {error, {txn_begin, Error}}
@@ -73,7 +75,7 @@ txn_commit() ->
 txn_commit(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/unsigned-native>>,
-    <<Result:32/native>> = erlang:port_control(get_port(), ?CMD_TXN_COMMIT, Cmd),
+    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TXN_COMMIT, Cmd),
     case decode_rc(Result) of
         ok ->
             receive
@@ -85,7 +87,7 @@ txn_commit(Opts) ->
     end.
 
 txn_abort() ->
-    <<Result:32/native>> = erlang:port_control(get_port(), ?CMD_TXN_ABORT, <<>>),
+    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TXN_ABORT, <<>>),
     case decode_rc(Result) of
         ok ->
             receive
@@ -115,20 +117,7 @@ put(Db, Key, Value) ->
     put(Db, Key, Value, []).
 
 put(Db, Key, Value, Opts) ->
-    {KeyLen, KeyBin} = to_binary(Key),
-    {ValLen, ValBin} = to_binary(Value),
-    Flags = process_flags(Opts),
-    Cmd = <<Db:32/native, Flags:32/unsigned-native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
-    <<Result:32/native>> = erlang:port_control(get_port(), ?CMD_PUT, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, {put, decode_rc(Reason)}}
-            end;
-        Error ->
-            {error, {put, decode_rc(Error)}}
-    end.
+    do_put(?CMD_PUT, Db, Key, Value, Opts).
 
 put_r(Db, Key, Value) ->
     put(Db, Key, Value, []).
@@ -139,6 +128,22 @@ put_r(Db, Key, Value, Opts) ->
         Error -> throw(Error)
     end.
 
+put_commit(Db, Key, Value) ->
+    put_commit(Db, Key, Value, []).
+
+put_commit(Db, Key, Value, Opts) ->
+    do_put(?CMD_PUT_COMMIT, Db, Key, Value, Opts).
+
+put_commit_r(Db, Key, Value) ->
+    put_commit_r(Db, Key, Value, []).
+
+put_commit_r(Db, Key, Value, Opts) ->
+    case do_put(?CMD_PUT_COMMIT, Db, Key, Value, Opts) of
+        ok -> ok;
+        Error -> throw(Error)
+    end.
+            
+
 get(Db, Key) ->
     get(Db, Key, []).
 
@@ -146,7 +151,7 @@ get(Db, Key, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
     Flags = process_flags(Opts),
     Cmd = <<Db:32/native, Flags:32/unsigned-native, KeyLen:32/native, KeyBin/bytes>>,
-    <<Result:32/native>> = erlang:port_control(get_port(), ?CMD_GET, Cmd),
+    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_GET, Cmd),
     case decode_rc(Result) of
         ok ->
             receive
@@ -178,7 +183,7 @@ update(Db, Key, Fun, Args) ->
                            undefined -> Fun(Key, Value);
                            Args      -> Fun(Key, Value, Args)
                        end,
-            ok = put(Db, Key, NewValue),
+            ok = put_commit(Db, Key, NewValue),
             NewValue
         end,
     transaction(F).
@@ -339,6 +344,27 @@ flag_value(Flag) ->
         txn_write_nosync -> ?DB_TXN_WRITE_NOSYNC
     end.
 
+
+%%
+%% Execute a PUT, using the provide "Action" to determine if it's a PUT or PUT_COMMIT
+%%
+do_put(Action, Db, Key, Value, Opts) ->
+    {KeyLen, KeyBin} = to_binary(Key),
+    {ValLen, ValBin} = to_binary(Value),
+    Flags = process_flags(Opts),
+    Cmd = <<Db:32/native, Flags:32/unsigned-native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
+    <<Result:32/native>> = erlang:port_control(get_port(), Action, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, {put, decode_rc(Reason)}}
+            end;
+        Error ->
+            {error, {put, decode_rc(Error)}}
+    end.
+
+    
 
 %%
 %% Move the cursor in a given direction. Invoked by cursor_next/prev/current.
