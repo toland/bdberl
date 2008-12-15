@@ -27,6 +27,7 @@ static void tune_system(int target, void* values, BinHelper* bh);
 static void do_async_put(void* arg);
 static void do_async_get(void* arg);
 static void do_async_txnop(void* arg);
+static void do_async_cursor_get(void* arg);
 
 static int add_dbref(PortData* data, int dbref);
 static int del_dbref(PortData* data, int dbref);
@@ -170,12 +171,11 @@ DRIVER_INIT(bdberl_drv)
         }
 
         // Make sure we can distiguish between lock timeouts and deadlocks
-        int rc = G_DB_ENV->set_flags(G_DB_ENV, DB_TIME_NOTGRANTED, 1);
-        printf("TIME_NOT_GRANTED rc: %d\n", rc);
+        G_DB_ENV->set_flags(G_DB_ENV, DB_TIME_NOTGRANTED, 1);
 
+        // Initialization transaction timeout so that deadlock checking works properly
         db_timeout_t to = 500 * 1000; // 500 ms
-        rc = G_DB_ENV->set_timeout(G_DB_ENV, to, DB_SET_TXN_TIMEOUT);
-        printf("DB_SET_TXN_TMEOUT rc: %d value %d\n", rc, to);
+        G_DB_ENV->set_timeout(G_DB_ENV, to, DB_SET_TXN_TIMEOUT);
 
         // BDB is setup -- allocate structures for tracking databases
         G_DATABASES = (Database*) driver_alloc(sizeof(Database) * G_DATABASES_SIZE);
@@ -266,6 +266,12 @@ static void bdberl_drv_stop(ErlDrvData handle)
     // Cleanup the port lock
     erl_drv_mutex_destroy(d->port_lock);
 
+    // If a cursor is open, close it
+    if (d->cursor)
+    {
+        d->cursor->close(d->cursor);
+    }
+
     // If a txn is currently active, terminate it. 
     if (d->txn)
     {
@@ -348,6 +354,12 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     case CMD_CLOSE_DB:
     {
         FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Fail if a cursor is open
+        if (d->cursor != 0)
+        {
+            RETURN_INT(ERROR_CURSOR_OPEN, outbuf);
+        }
 
         // Fail if a txn is open
         if (d->txn != 0)
@@ -467,6 +479,76 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // up in the provided binhelper
         tune_system(target, values, &bh);
         RETURN_BH(bh, outbuf);
+    }
+    case CMD_CURSOR_OPEN:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);        
+
+        if (d->cursor)
+        {
+            RETURN_INT(ERROR_CURSOR_OPEN, outbuf);
+        }
+
+        // Inbuf is << DbRef:32, Flags:32 >>
+        int dbref = UNPACK_INT(inbuf, 0);
+        int flags = UNPACK_INT(inbuf, 4);
+
+        // Make sure we have a reference to the requested database
+        if (has_dbref(d, dbref))
+        {
+            // Grab the database handle and open the cursor
+            DB* db = G_DATABASES[dbref].db;
+            int rc = db->cursor(db, d->txn, &(d->cursor), flags);
+            RETURN_INT(rc, outbuf);
+        }
+        else
+        {
+            RETURN_INT(ERROR_INVALID_DBREF, outbuf);
+        }
+    }
+    case CMD_CURSOR_CURR:
+    case CMD_CURSOR_NEXT:
+    case CMD_CURSOR_PREV:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Fail if no cursor currently open
+        if (!d->cursor)
+        {
+            RETURN_INT(ERROR_NO_CURSOR, outbuf);
+        }
+        
+        // Schedule the operation
+        d->async_op = cmd;
+        d->async_pool = G_TPOOL_GENERAL;
+        d->async_job  = bdberl_tpool_run(G_TPOOL_GENERAL, &do_async_cursor_get, d, 0);
+
+        // Let caller know operation is in progress
+        RETURN_INT(0, outbuf);
+    }
+    case CMD_CURSOR_CLOSE:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Fail if no cursor open
+        if (!d->cursor)
+        {
+            RETURN_INT(ERROR_NO_CURSOR, outbuf);
+        }
+
+        // It's possible to get a deadlock when closing a cursor -- in that situation we also
+        // need to go ahead and abort the txn
+        int rc = d->cursor->close(d->cursor);
+        if (d->txn && (rc == DB_LOCK_NOTGRANTED || rc == DB_LOCK_DEADLOCK))
+        {
+            d->txn->abort(d->txn);
+            d->txn = 0;
+        }
+
+        // Regardless of what happens, clear out the cursor pointer
+        d->cursor = 0;
+
+        RETURN_INT(0, outbuf);
     }
     }
     *outbuf = 0;
@@ -589,8 +671,6 @@ static int open_database(const char* name, DBTYPE type, unsigned int flags, Port
 
 static int close_database(int dbref, unsigned flags, PortData* data)
 {
-//    printf("Closing %d for port %p\n", dbref, data->port);
-
     // Remove this database from our list 
     if (del_dbref(data, dbref))
     {
@@ -622,10 +702,12 @@ static int close_database(int dbref, unsigned flags, PortData* data)
         }
 
         WRITE_UNLOCK(G_DATABASES_RWLOCK);
-        return 1;
+        return 0;
     }
-
-    return 0;
+    else
+    {
+        return ERROR_INVALID_DBREF;
+    }
 }
 
 /**
@@ -856,6 +938,85 @@ static void do_async_txnop(void* arg)
     // response code.
     send_ok_or_error(port, port_owner, rc);
 }
+
+
+static void do_async_cursor_get(void* arg)
+{
+    // Payload is: << DbRef:32, Flags:32, KeyLen:32, Key:KeyLen >>
+    PortData* d = (PortData*)arg;
+
+    // Setup DBTs 
+    DBT key;
+    DBT value;
+    memset(&key, '\0', sizeof(DBT));
+    memset(&value, '\0', sizeof(DBT));
+
+    // Determine what type of cursor get to perform
+    int flags = 0;
+    switch (d->async_op)
+    {
+    case CMD_CURSOR_NEXT: 
+        flags = DB_NEXT; break;
+    case CMD_CURSOR_PREV: 
+        flags = DB_PREV; break;
+    default:
+        flags = DB_CURRENT; 
+    }
+
+    // Execute the operation
+    int rc = d->cursor->get(d->cursor, &key, &value, flags);
+
+    // Cleanup as necessary; any sort of failure means we need to close the cursor and abort
+    // the transaction
+    if (rc && rc != DB_NOTFOUND)
+    {
+        d->cursor->close(d->cursor);
+        d->cursor = 0;
+        if (d->txn)
+        {
+            d->txn->abort(d->txn);
+            d->txn = 0;
+        }
+    }
+
+    // Save the port and pid references -- we need copies independent from the PortData
+    // structure. Once we release the port_lock after clearing the cmd, it's possible that
+    // the port could go away without waiting on us to finish. This is acceptable, but we need
+    // to be certain that there is no overlap of data between the two threads. driver_send_term
+    // is safe to use from a thread, even if the port you're sending from has already expired.
+    ErlDrvPort port = d->port;
+    ErlDrvTermData port_owner = d->port_owner;
+
+    // Release the port for another operation
+    d->async_pool = 0;
+    d->async_job  = 0;
+    erl_drv_mutex_lock(d->port_lock);
+    d->async_op = CMD_NONE;
+    erl_drv_mutex_unlock(d->port_lock);
+
+    // Notify port of result
+    if (rc == 0)
+    {
+        ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("ok"),
+                                      ERL_DRV_BUF2BINARY, (ErlDrvTermData)key.data, (ErlDrvUInt)key.size,
+                                      ERL_DRV_BUF2BINARY, (ErlDrvTermData)value.data, (ErlDrvUInt)value.size,
+                                      ERL_DRV_TUPLE, 3};
+        driver_send_term(port, port_owner, response, sizeof(response) / sizeof(response[0]));
+    }
+    else if (rc == DB_NOTFOUND)
+    {
+        ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("not_found") };
+        driver_send_term(port, port_owner, response, sizeof(response) / sizeof(response[0]));
+    }
+    else
+    {
+        ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("error"),
+                                      ERL_DRV_INT, rc,
+                                      ERL_DRV_TUPLE, 2};
+        driver_send_term(port, port_owner, response, sizeof(response) / sizeof(response[0]));
+    }
+}
+
 
 
 static void* zalloc(unsigned int size)

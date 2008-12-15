@@ -17,7 +17,8 @@
          put_r/3, put_r/4,
          get/2, get/3,
          get_r/2, get_r/3,
-         update/3, update/4]).
+         update/3, update/4,
+         cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0]).
 
 -include("bdberl.hrl").
 
@@ -46,11 +47,12 @@ close(Db) ->
 close(Db, Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Db:32/native-integer, Flags:32/unsigned-native-integer>>,
-    case erlang:port_control(get_port(), ?CMD_CLOSE_DB, Cmd) of
-        <<0:32/native-integer>> ->
-            {error, invalid_db};
-        <<1:32/native-integer>> ->
-            ok
+    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_CLOSE_DB, Cmd),
+    case decode_rc(Rc) of
+        ok ->
+            ok;
+        Reason ->
+            {error, Reason}
     end.
 
 txn_begin() ->
@@ -181,6 +183,36 @@ update(Db, Key, Fun, Args) ->
         end,
     transaction(F).
 
+cursor_open(Db) ->
+    Cmd = <<Db:32/native, 0:32/native>>,
+    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_CURSOR_OPEN, Cmd),
+    case decode_rc(Rc) of
+        ok ->
+            ok;
+        Reason ->
+            {error, Reason}
+    end.
+            
+
+cursor_next() ->            
+    do_cursor_move(?CMD_CURSOR_NEXT).
+
+cursor_prev() ->
+    do_cursor_move(?CMD_CURSOR_PREV).
+
+cursor_current() ->
+    do_cursor_move(?CMD_CURSOR_CURR).
+
+cursor_close() ->
+    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
+    case decode_rc(Rc) of
+        ok ->
+            ok;
+        Reason ->
+            {error, Reason}
+    end.
+    
+
 get_cache_size() ->    
     Cmd = <<?SYSP_CACHESIZE_GET:32/native>>,
     <<Result:32/signed-native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>> = 
@@ -248,8 +280,11 @@ get_port() ->
 %%
 decode_rc(?ERROR_NONE)               -> ok;
 decode_rc(?ERROR_ASYNC_PENDING)      -> async_pending;
-decode_rc(?ERROR_INVALID_DBREF)      -> invalid_dbref;
+decode_rc(?ERROR_INVALID_DBREF)      -> invalid_db;
+decode_rc(?ERROR_TXN_OPEN)           -> transaction_open;
 decode_rc(?ERROR_NO_TXN)             -> no_txn;
+decode_rc(?ERROR_CURSOR_OPEN)        -> cursor_open;
+decode_rc(?ERROR_NO_CURSOR)          -> no_cursor;
 decode_rc(?ERROR_DB_LOCK_NOTGRANTED) -> lock_not_granted;
 decode_rc(?ERROR_DB_LOCK_DEADLOCK)   -> deadlock;
 decode_rc(Rc)                        -> {unknown, Rc}.
@@ -304,3 +339,22 @@ flag_value(Flag) ->
         txn_write_nosync -> ?DB_TXN_WRITE_NOSYNC
     end.
 
+
+%%
+%% Move the cursor in a given direction. Invoked by cursor_next/prev/current.
+%%
+do_cursor_move(Direction) ->            
+    <<Rc:32/native-signed>> = erlang:port_control(get_port(), Direction, <<>>),
+    case decode_rc(Rc) of
+        ok ->
+            receive
+                {ok, KeyBin, ValueBin} ->
+                    {ok, binary_to_term(KeyBin), binary_to_term(ValueBin)};
+                not_found ->
+                    not_found;
+                {error, ReasonCode} ->
+                    {error, decode_rc(ReasonCode)}
+            end;
+        Reason ->
+            {error, Reason}
+    end.

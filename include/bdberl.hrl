@@ -5,15 +5,21 @@
 %%
 %% -------------------------------------------------------------------
 
--define(CMD_NONE,       0).
--define(CMD_OPEN_DB,    1).
--define(CMD_CLOSE_DB,   2).
--define(CMD_TXN_BEGIN,  3).
--define(CMD_TXN_COMMIT, 4).
--define(CMD_TXN_ABORT,  5).
--define(CMD_GET,        6).
--define(CMD_PUT,        7).
--define(CMD_TUNE,       8).
+-define(CMD_NONE,          0).
+-define(CMD_OPEN_DB,       1).
+-define(CMD_CLOSE_DB,      2).
+-define(CMD_TXN_BEGIN,     3).
+-define(CMD_TXN_COMMIT,    4).
+-define(CMD_TXN_ABORT,     5).
+-define(CMD_GET,           6).
+-define(CMD_PUT,           7).
+-define(CMD_TUNE,          8).
+-define(CMD_CURSOR_OPEN,   9).
+-define(CMD_CURSOR_CURR,  10).
+-define(CMD_CURSOR_NEXT,  11).
+-define(CMD_CURSOR_PREV,  12).
+-define(CMD_CURSOR_CLOSE, 13).
+
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).
@@ -32,6 +38,8 @@
 -define(ERROR_INVALID_DBREF, -29002).           % DbRef not currently opened by this port
 -define(ERROR_TXN_OPEN,      -29003).           % Transaction already active on this port
 -define(ERROR_NO_TXN,        -29004).           % No transaction open on this port
+-define(ERROR_CURSOR_OPEN,   -29005).           % Cursor already active on this port
+-define(ERROR_NO_CURSOR,     -29006).           % No cursor open on this port
 
 -define(ERROR_DB_LOCK_NOTGRANTED, -30993).      % Lock was busy and not granted
 -define(ERROR_DB_LOCK_DEADLOCK,   -30994).      % Deadlock occurred

@@ -23,7 +23,8 @@ all() ->
      transaction_should_abort_on_user_abort,
      update_should_save_value_if_successful,
      update_should_accept_args_for_fun,
-     port_should_tune_transaction_timeouts].
+     port_should_tune_transaction_timeouts,
+     cursor_should_iterate, cursor_should_fail_if_not_open].
 
 
 init_per_testcase(_TestCase, Config) ->
@@ -124,3 +125,37 @@ port_should_tune_transaction_timeouts(_Config) ->
     {ok, 500000} = bdberl:get_txn_timeout(),
     ok = bdberl:set_txn_timeout(250000),
     {ok, 250000} = bdberl:get_txn_timeout().
+
+cursor_should_iterate(Config) ->
+    Db = ?config(db, Config),
+    
+    %% Store some sample values in the db
+    ok = bdberl:put(Db, key1, value1),
+    ok = bdberl:put(Db, key2, value2),
+    ok = bdberl:put(Db, key3, value3),
+    
+    %% Validate that the cursor returns each value in order (ASSUME btree db)
+    ok = bdberl:cursor_open(Db),
+    {ok, key1, value1} = bdberl:cursor_next(),
+    {ok, key2, value2} = bdberl:cursor_next(),
+    {ok, key3, value3} = bdberl:cursor_next(),
+    not_found = bdberl:cursor_next(),
+
+    %% Validate that the "current" key is key3
+    {ok, key3, value3} = bdberl:cursor_current(),
+
+    %% Now move backwards (should jump to key2, since we are "on" key3)
+    {ok, key2, value2} = bdberl:cursor_prev(),
+    {ok, key1, value1} = bdberl:cursor_prev(),
+    not_found = bdberl:cursor_prev(),
+    
+    ok = bdberl:cursor_close().
+
+cursor_should_fail_if_not_open(Config) ->
+    {error, no_cursor} = bdberl:cursor_next(),
+    {error, no_cursor} = bdberl:cursor_prev(),
+    {error, no_cursor} = bdberl:cursor_current(),
+    {error, no_cursor} = bdberl:cursor_close().
+
+
+

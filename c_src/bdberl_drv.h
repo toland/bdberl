@@ -37,6 +37,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define CMD_GET              6
 #define CMD_PUT              7
 #define CMD_TUNE             8
+#define CMD_CURSOR_OPEN      9
+#define CMD_CURSOR_CURR     10
+#define CMD_CURSOR_NEXT     11
+#define CMD_CURSOR_PREV     12
+#define CMD_CURSOR_CLOSE    13
 
 
 /**
@@ -60,6 +65,8 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define ERROR_INVALID_DBREF (-29002) /* DbRef not currently opened by this port */
 #define ERROR_TXN_OPEN      (-29003) /* Transaction already active on this port */
 #define ERROR_NO_TXN        (-29004) /* No transaction open on this port */
+#define ERROR_CURSOR_OPEN   (-29005) /* Cursor already active on this port */
+#define ERROR_NO_CURSOR     (-29006) /* No cursor open on this port */
 
 
 /**
@@ -137,12 +144,14 @@ typedef struct
 
     ErlDrvTermData port_owner;  /* Pid of the port owner */
 
-    DbRefList* dbrefs;     /* List of databases that this port has opened  */
+    DbRefList* dbrefs;          /* List of databases that this port has opened  */
 
-    DB_TXN* txn;           /* Transaction handle for this port; each port may only have 1 txn
-                            * active */
+    DB_TXN* txn;             /* Transaction handle for this port; each port may only have 1 txn
+                              * active */
 
-    int async_op;          /* Value indicating what async op is pending */
+    DBC* cursor;            /* Active cursor handle; each port may have only 1 cursor active */
+
+    int async_op;               /* Value indicating what async op is pending */
 
     int async_flags;            /* Flags for the async op command */
 
