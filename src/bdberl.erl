@@ -178,7 +178,10 @@ update(Db, Key, Fun) ->
 
 update(Db, Key, Fun, Args) ->
     F = fun() ->
-            {ok, Value} = get(Db, Key, [rmw]),
+            Value = case get(Db, Key, [rmw]) of
+                        not_found -> not_found;
+                        {ok, Val} -> Val
+                    end,
             NewValue = case Args of
                            undefined -> Fun(Key, Value);
                            Args      -> Fun(Key, Value, Args)
