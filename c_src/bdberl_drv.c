@@ -148,6 +148,7 @@ DRIVER_INIT(bdberl_drv)
         DB_RECOVER |            /* Enable support for recovering from failures */
         DB_CREATE |             /* Create files as necessary */
         DB_REGISTER |           /* Run recovery if needed */
+        DB_USE_ENVIRON |        /* Use DB_HOME environment variable */
         DB_THREAD;              /* Make the environment free-threaded */
 
     // Initialize global environment -- use environment variable DB_HOME to 
