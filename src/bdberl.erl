@@ -12,7 +12,7 @@
          txn_commit/0, txn_commit/1, txn_abort/0,
          get_cache_size/0, set_cache_size/3,
          get_txn_timeout/0, set_txn_timeout/1,
-         transaction/1,
+         transaction/1, transaction/2,
          put/3, put/4,
          put_r/3, put_r/4,
          put_commit/3, put_commit/4, 
@@ -23,6 +23,8 @@
          cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0]).
 
 -include("bdberl.hrl").
+
+-define(is_lock_error(Error), (Error =:= deadlock orelse Error =:= lock_not_granted)).
 
 
 open(Name, Type) ->
@@ -97,18 +99,34 @@ txn_abort() ->
         Error ->
             {error, {txn_abort, Error}}
     end.
-            
+
 transaction(Fun) ->
+    transaction(Fun, infinity).
+
+transaction(_Fun, 0) ->
+    txn_abort(),
+    {error, {transaction_failed, retry_limit_reached}};
+transaction(Fun, Retries) ->
     txn_begin(),
     try Fun() of
         abort ->
             txn_abort(),
             {error, transaction_aborted};
+
         Value ->
             txn_commit(),
             {ok, Value}
     catch
-        _ : Reason -> 
+        throw : {error, {_Op, Error}} when ?is_lock_error(Error) ->
+            txn_abort(),
+            erlang:yield(),
+            R = case Retries of
+                    infinity -> infinity;
+                    Retries -> Retries - 1
+                end,
+            transaction(Fun, R);
+
+        _ : Reason ->
             txn_abort(),
             {error, {transaction_failed, Reason}}
     end.
@@ -142,7 +160,6 @@ put_commit_r(Db, Key, Value, Opts) ->
         ok -> ok;
         Error -> throw(Error)
     end.
-            
 
 get(Db, Key) ->
     get(Db, Key, []).
@@ -178,7 +195,7 @@ update(Db, Key, Fun) ->
 
 update(Db, Key, Fun, Args) ->
     F = fun() ->
-            Value = case get(Db, Key, [rmw]) of
+            Value = case get_r(Db, Key, [rmw]) of
                         not_found -> not_found;
                         {ok, Val} -> Val
                     end,
@@ -186,7 +203,7 @@ update(Db, Key, Fun, Args) ->
                            undefined -> Fun(Key, Value);
                            Args      -> Fun(Key, Value, Args)
                        end,
-            ok = put_commit(Db, Key, NewValue),
+            put_commit_r(Db, Key, NewValue),
             NewValue
         end,
     transaction(F).

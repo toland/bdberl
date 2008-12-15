@@ -22,7 +22,11 @@ end
 
 rule ".o" => ["%X.c", "%X.h"] do |t|
   puts "compiling #{t.source}..."
-  sh "gcc -g -c -Wall -Werror -fPIC -Ic_src/system/include -I#{erts_dir()}/include #{t.source} -o #{t.name}", :verbose => false
+  sh "gcc -g -c -Wall -Werror -fPIC #{dflag} -Ic_src/system/include -I#{erts_dir()}/include #{t.source} -o #{t.name}", :verbose => false
+end
+
+def dflag()
+  ENV["release"] ? "" : "-DDEBUG"
 end
 
 task :compile_c => ['c_src'] + C_OBJS

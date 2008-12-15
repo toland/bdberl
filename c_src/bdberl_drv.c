@@ -134,12 +134,16 @@ static TPool* G_TPOOL_TXNS;
         erl_drv_mutex_unlock(d->port_lock);             \
     }}
 
-
+#ifdef DEBUG
+#  define DBG printf
+#else
+#  define DBG(arg1,...)
+#endif
 
 
 DRIVER_INIT(bdberl_drv) 
 {
-    printf("DRIVER INIT\n");
+    DBG("DRIVER INIT\n");
     // Setup flags we'll use to init the environment
     int flags = 
         DB_INIT_LOCK |          /* Enable support for locking */
@@ -254,9 +258,9 @@ static void bdberl_drv_stop(ErlDrvData handle)
         // Drop the lock prior to starting the wait for the async process
         erl_drv_mutex_unlock(d->port_lock);
 
-        printf("Cancelling async job for port: %p\n", d->port);
+        DBG("Cancelling async job for port: %p\n", d->port);
         bdberl_tpool_cancel(d->async_pool, d->async_job);
-        printf("Canceled async job for port: %p\n", d->port);
+        DBG("Canceled async job for port: %p\n", d->port);
     }
     else
     {
@@ -285,7 +289,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
         close_database(d->dbrefs->dbref, 0, d);
     }
 
-    printf("Stopped port: %p\n", d->port);
+    DBG("Stopped port: %p\n", d->port);
     
     // Release the port instance data
     driver_free(d->work_buffer);
@@ -313,7 +317,7 @@ static void bdberl_drv_finish()
     erl_drv_rwlock_destroy(G_DATABASES_RWLOCK);
     hive_hash_destroy(G_DATABASES_NAMES);
 
-    printf("DRIVER_FINISH\n");
+    DBG("DRIVER_FINISH\n");
 }
 
 static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd, 
@@ -697,7 +701,7 @@ static int close_database(int dbref, unsigned flags, PortData* data)
         Database* database = &G_DATABASES[dbref];
         if (database->ports == 0)
         {
-            printf("Closing actual database for dbref %d\n", dbref);
+            DBG("Closing actual database for dbref %d\n", dbref);
             // Close out the BDB handle
             database->db->close(database->db, flags);
         
@@ -1229,14 +1233,14 @@ static void* deadlock_check(void* arg)
         G_DB_ENV->lock_detect(G_DB_ENV, 0, DB_LOCK_DEFAULT, &count);
         if (count > 0)
         {
-            printf("Rejected deadlocks: %d\n", count);
+            DBG("Rejected deadlocks: %d\n", count);
         }
 
         // TODO: Use nanosleep
         usleep(G_DEADLOCK_CHECK_INTERVAL * 1000);
     }
 
-    printf("Deadlock checker exiting.\n");
+    DBG("Deadlock checker exiting.\n");
     return 0;
 }
 
@@ -1253,7 +1257,7 @@ static void* trickle_write(void* arg)
             // Enough time has passed -- time to run the trickle operation again
             int pages_wrote = 0;
             G_DB_ENV->memp_trickle(G_DB_ENV, G_TRICKLE_PERCENTAGE, &pages_wrote);
-            printf("Wrote %d pages to achieve %d trickle\n", pages_wrote, G_TRICKLE_PERCENTAGE);
+            DBG("Wrote %d pages to achieve %d trickle\n", pages_wrote, G_TRICKLE_PERCENTAGE);
 
             // Reset the counter
             elapsed_secs = 0;
@@ -1266,7 +1270,7 @@ static void* trickle_write(void* arg)
         }
     }
 
-    printf("Trickle writer exiting.\n");
+    DBG("Trickle writer exiting.\n");
     return 0;
 }
 
