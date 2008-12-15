@@ -24,8 +24,6 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
                               char* inbuf, int inbuf_sz, 
                               char** outbuf, int outbuf_sz);
 
-static void bdberl_drv_ready_input(ErlDrvData handle, ErlDrvEvent ev);
-
 
 /**
  * Command codes
@@ -85,7 +83,7 @@ ErlDrvEntry bdberl_drv_entry =
     bdberl_drv_start,		/* L_PTR start, called when port is opened */
     bdberl_drv_stop,		/* F_PTR stop, called when port is closed */
     NULL,			/* F_PTR output, called when erlang has sent */
-    bdberl_drv_ready_input,     /* F_PTR ready_input, called when input descriptor ready */
+    NULL,                       /* F_PTR ready_input, called when input descriptor ready */
     NULL,			/* F_PTR ready_output, called when output descriptor ready */
     "bdberl_drv",               /* driver_name */
     bdberl_drv_finish,          /* F_PTR finish, called when unloaded */
@@ -134,33 +132,30 @@ typedef struct
 {
     ErlDrvPort port;
 
+    ErlDrvMutex* port_lock;     /* Mutex for this port (to permit async jobs to safely update this
+                                 * structure) */
+
+    ErlDrvTermData port_owner;  /* Pid of the port owner */
+
     DbRefList* dbrefs;     /* List of databases that this port has opened  */
 
     DB_TXN* txn;           /* Transaction handle for this port; each port may only have 1 txn
                             * active */
 
-    int pipe_fds[2];       /* Array of pipe fds for signaling purposes */
-
     int async_op;          /* Value indicating what async op is pending */
 
-    void* async_data;      /* Opaque point to data used during async op */
+    int async_flags;            /* Flags for the async op command */
 
     TPoolJob* async_job;   /* Active job on the thread pool */
 
     TPool* async_pool;     /* Pool the async job is running on */
 
+    void* work_buffer;
+    
+    unsigned int work_buffer_sz;
+
+    unsigned int work_buffer_offset;
+
 } PortData;
-
-
-typedef struct
-{
-    PortData* port;       /* Port that originated this request -- READ ONLY! */
-    int rc;                     /* Return code from operation */
-    DB* db;                     /* Database to use for data storage/retrieval */
-    void* payload;              /* Packed key/value data */
-    int payload_sz;             /* Size of payload */
-} AsyncData;
-
-
 
 #endif
