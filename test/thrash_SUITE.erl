@@ -29,7 +29,7 @@ wait_for_finish(0) ->
 wait_for_finish(Count) ->
     receive
         {finished, Pid} ->
-            io:format("~p is done; ~p remaining.\n", [Pid, Count-1]),
+            ct:print("~p is done; ~p remaining.\n", [Pid, Count-1]),
             wait_for_finish(Count-1)
     end.
 
@@ -47,34 +47,16 @@ thrash_run(Owner) ->
 thrash_incr_loop(Owner, 0) ->
     Owner ! {finished, self()};
 thrash_incr_loop(Owner, Count) ->
-    ct:print("~p\n", [Count]),
+    ct:print("~p", [Count]),
     %% Choose random key
     Key = random:uniform(1200),
     
     %% Start a txn that will read the current value of the key and increment by 1
-    F = fun() ->
-                case bdberl:get(0, Key, [rmw]) of
-                    not_found ->
-                        Value = 0;
-
-                    {ok, Value} ->
-                        Value
-                end,
-                ok = bdberl:put(0, Key, Value)
+    F = fun(_Key, Value) ->
+            case Value of
+                not_found -> 0;
+                Value     -> Value + 1
+            end
         end,
-    ok = do_txn(F, 0),
+    {ok, _} = bdberl:update(0, Key, F),
     thrash_incr_loop(Owner, Count-1).
-
-do_txn(F, Count) ->
-    case bdberl:txn_begin() of
-        ok ->
-            case catch(F()) of
-                {'EXIT', _Reason} ->
-                    io:format("Txn attempt ~p failed; retrying", [Count]),
-                    do_txn(F, Count+1);
-                _Other ->
-                    ok = bdberl:txn_commit()
-            end;
-        {error, _Reason} ->
-            do_txn(F, Count+1)
-    end.
