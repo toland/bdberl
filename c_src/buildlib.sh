@@ -22,7 +22,6 @@ tar -xzf db-${DB_VER}.tar.gz && \
 (cd db-${DB_VER}/build_unix && \
     ../dist/configure --prefix=$WORKDIR --disable-shared --with-pic && make && ranlib libdb-*.a && make install) && \
     mkdir -p $TARGETDIR/utils && \
-    cp $WORKDIR/bin/* $TARGETDIR/utils && \
     rm -rf db-${DB_VER}
 
 

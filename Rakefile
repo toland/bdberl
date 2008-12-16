@@ -41,11 +41,16 @@ task :int_test do
   run_tests "int_test", "+A10"
 end
 
-# task :compile_perf_tests do
-#   do_compile_tests("perftest")
-# end
-# 
-# desc "Run performance tests"
-# task :perftest => [:compile, :compile_perf_tests] do
-#   run_tests "perftest", "+A10"
-# end
+task :package => [:compile] do
+  app = File.basename(APP, ".app")
+  vsn = erl_app_version(app)
+  target_dir = "#{app}-#{vsn}"
+  Dir.mkdir target_dir
+  cp_r 'ebin', target_dir
+  cp_r 'include', target_dir
+  cp_r 'src', target_dir
+  cp_r 'priv', target_dir
+  Dir.mkdir "#{target_dir}/priv/bin"
+  cp_r Dir.glob('c_src/system/bin/*'), "#{target_dir}/priv/bin"
+  puts "Packaged to #{target_dir}"
+end
