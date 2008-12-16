@@ -37,3 +37,15 @@ task :test do
   run_tests "test", "+A10"
 end
 
+task :int_test do
+  run_tests "int_test", "+A10"
+end
+
+# task :compile_perf_tests do
+#   do_compile_tests("perftest")
+# end
+# 
+# desc "Run performance tests"
+# task :perftest => [:compile, :compile_perf_tests] do
+#   run_tests "perftest", "+A10"
+# end

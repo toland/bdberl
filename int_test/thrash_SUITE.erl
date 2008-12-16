@@ -47,7 +47,7 @@ thrash_run(Owner) ->
 thrash_incr_loop(Owner, 0) ->
     Owner ! {finished, self()};
 thrash_incr_loop(Owner, Count) ->
-    ct:print("~p", [Count]),
+    % ct:print("~p", [Count]),
     %% Choose random key
     Key = random:uniform(1200),
     
