@@ -73,6 +73,26 @@ def erl_app_modules(app)
   end
 end
 
+def erl_app_version(app)
+  script = <<-ERL
+     ok = application:load(#{app}),
+     {ok, Vsn} = application:get_key(#{app}, vsn),
+     io:format("~s\\n", [Vsn]).
+     ERL
+  output = erl_run(script, "-pa ebin")
+  output.strip()
+end
+
+def erl_app_version(app)
+  script = <<-ERL
+     ok = application:load(#{app}),
+     {ok, Vsn} = application:get_key(#{app}, vsn),
+     io:format("~s\\n", [Vsn]).
+     ERL
+  output = erl_run(script, "-pa ebin")
+  output.strip()
+end
+
 def erts_dir()
   script = <<-ERL
       io:format("~s\n", [lists:concat([code:root_dir(), "/erts-", erlang:system_info(version)])])
