@@ -14,8 +14,7 @@ static void bin_helper_check_size(BinHelper* bh, int space_needed)
 {
     if (bh->offset + space_needed > bh->bin->orig_size)
     {
-        // Need to realloc space -- grow by 2 * space_needed
-        bh->bin = driver_realloc_binary(bh->bin, bh->bin->orig_size + (2 * space_needed));
+        bh->bin = driver_realloc_binary(bh->bin, bh->offset + space_needed);
     }
 }
 

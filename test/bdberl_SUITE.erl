@@ -10,7 +10,7 @@
 
 -include_lib("ct.hrl").
 
-all() ->
+ball() ->
     [open_should_create_database_if_none_exists,
      open_should_allow_opening_multiple_databases,
      close_should_fail_with_invalid_db_handle,
@@ -25,8 +25,20 @@ all() ->
      update_should_accept_args_for_fun,
      port_should_tune_transaction_timeouts,
      cursor_should_iterate, cursor_should_fail_if_not_open,
-     put_commit_should_end_txn].
+     put_commit_should_end_txn,
+     data_dir_should_be_priv_dir,
+     delete_should_remove_file, 
+     delete_should_fail_if_db_inuse].
 
+
+init_per_suite(Config) ->
+    DbHome = ?config(priv_dir, Config),
+    os:putenv("DB_HOME", DbHome),
+    ok = file:write_file(DbHome ++ "DB_CONFIG", <<"set_data_dir ", (list_to_binary(DbHome))/binary, "\n">>),
+    Config.
+
+end_per_suite(_Config) ->
+    ok.
 
 init_per_testcase(_TestCase, Config) ->
     {ok, Db} = bdberl:open("api_test.db", btree, [create, exclusive]),
@@ -34,11 +46,12 @@ init_per_testcase(_TestCase, Config) ->
 
 end_per_testcase(_TestCase, Config) ->
     ok = bdberl:close(?config(db, Config)),
-    ok = file:delete("api_test.db").
+    ok = file:delete(filename:join([?config(priv_dir, Config), "api_test.db"])).
 
 
-open_should_create_database_if_none_exists(_Config) ->
-    true = filelib:is_file("api_test.db").
+open_should_create_database_if_none_exists(Config) ->
+    DbName = filename:join([?config(priv_dir, Config), "api_test.db"]),
+    true = filelib:is_file(DbName).
 
 open_should_allow_opening_multiple_databases(_Config) ->
     %% Open up another db -- should use dbref 1 as that's the first available
@@ -171,4 +184,23 @@ put_commit_should_end_txn(Config) ->
     %% Verify data got committed
     {ok, value1} = bdberl:get(Db, key1).
     
+data_dir_should_be_priv_dir(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    [PrivDir] = bdberl:get_data_dirs().
 
+delete_should_remove_file(Config) ->
+    {ok, Db} = bdberl:open("mytest.bdb", btree),
+    ok = bdberl:close(Db),
+
+    Fname = filename:join([?config(priv_dir, Config), "mytest.bdb"]),
+    true = filelib:is_file(Fname),
+    
+    ok = bdberl:delete_database("mytest.bdb"),
+    
+    false = filelib:is_file(Fname).
+
+delete_should_fail_if_db_inuse(Config) ->
+    Fname = filename:join([?config(priv_dir, Config), "api_test.db"]),
+    true = filelib:is_file(Fname),
+    {error, _} = bdberl:delete_database(Fname),
+    true = filelib:is_file(Fname).

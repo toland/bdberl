@@ -43,6 +43,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define CMD_CURSOR_PREV     12
 #define CMD_CURSOR_CLOSE    13
 #define CMD_PUT_COMMIT      14
+#define CMD_REMOVE_DB       15
 
 
 /**
@@ -68,19 +69,16 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define ERROR_NO_TXN        (-29004) /* No transaction open on this port */
 #define ERROR_CURSOR_OPEN   (-29005) /* Cursor already active on this port */
 #define ERROR_NO_CURSOR     (-29006) /* No cursor open on this port */
+#define ERROR_DB_ACTIVE     (-29007) /* Database is currently active; operation requires otherwise */
 
 
 /**
  * Tunable system parameters/actions
  */
-#define SYSP_CACHESIZE_SET               0
 #define SYSP_CACHESIZE_GET               1
 #define SYSP_TXN_TIMEOUT_SET             2
 #define SYSP_TXN_TIMEOUT_GET             3
-#define SYSP_TXN_TIMEOUT             1
-#define SYSP_DEADLOCK_CHECK_INTERVAL 2
-#define SYSP_TRICKLE_INTERVAL        3
-#define SYSP_TRICKLE_PERCENTAGE      4
+#define SYSP_DATA_DIR_GET                4
 
 /** 
  * Driver Entry

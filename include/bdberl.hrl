@@ -20,15 +20,15 @@
 -define(CMD_CURSOR_PREV,  12).
 -define(CMD_CURSOR_CLOSE, 13).
 -define(CMD_PUT_COMMIT,   14).
-
+-define(CMD_REMOVE_DB,    15).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).
 
--define(SYSP_CACHESIZE_SET,   0).
 -define(SYSP_CACHESIZE_GET,   1).
 -define(SYSP_TXN_TIMEOUT_SET, 2).
 -define(SYSP_TXN_TIMEOUT_GET, 3).
+-define(SYSP_DATA_DIR_GET,    4).
 
 -define(STATUS_OK,    0).
 -define(STATUS_ERROR, 1).
@@ -41,6 +41,7 @@
 -define(ERROR_NO_TXN,        -29004).           % No transaction open on this port
 -define(ERROR_CURSOR_OPEN,   -29005).           % Cursor already active on this port
 -define(ERROR_NO_CURSOR,     -29006).           % No cursor open on this port
+-define(ERROR_DB_ACTIVE,     -29007).           % Database is currently active; operation requires otherwise
 
 -define(ERROR_DB_LOCK_NOTGRANTED, -30993).      % Lock was busy and not granted
 -define(ERROR_DB_LOCK_DEADLOCK,   -30994).      % Deadlock occurred

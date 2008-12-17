@@ -21,6 +21,7 @@
  */
 static int open_database(const char* name, DBTYPE type, unsigned flags, PortData* data, int* errno);
 static int close_database(int dbref, unsigned flags, PortData* data);
+static int delete_database(const char* name);
 
 static void tune_system(int target, void* values, BinHelper* bh);
 
@@ -325,7 +326,6 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
                               char** outbuf, int outbuf_sz)
 {
     PortData* d = (PortData*)handle;
-
     switch(cmd)        
     {
     case CMD_OPEN_DB:
@@ -484,11 +484,9 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         int target = UNPACK_INT(inbuf, 0);
         char* values = UNPACK_BLOB(inbuf, 4);
 
-        // Setup a binhelper
-        BinHelper bh;
-
         // Execute the tuning -- the result to send back to the caller is wrapped
         // up in the provided binhelper
+        BinHelper bh;
         tune_system(target, values, &bh);
         RETURN_BH(bh, outbuf);
     }
@@ -561,6 +559,21 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         d->cursor = 0;
 
         RETURN_INT(0, outbuf);
+    }
+    case CMD_REMOVE_DB:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Fail if a txn is open
+        if (d->txn != 0)
+        {
+            RETURN_INT(ERROR_TXN_OPEN, outbuf);
+        }
+
+        // Inbuf is: << dbname/bytes, 0:8 >>
+        const char* dbname = UNPACK_STRING(inbuf, 0);
+        int rc = delete_database(dbname);
+        RETURN_INT(rc, outbuf);
     }
     }
     *outbuf = 0;
@@ -722,6 +735,24 @@ static int close_database(int dbref, unsigned flags, PortData* data)
     }
 }
 
+static int delete_database(const char* name)
+{
+    // Go directly to a write lock on the global databases structure
+    WRITE_LOCK(G_DATABASES_RWLOCK);
+
+    // Make sure the database is not opened by anyone
+    if (hive_hash_get(G_DATABASES_NAMES, name))
+    {
+        WRITE_UNLOCK(G_DATABASES_RWLOCK);
+        return ERROR_DB_ACTIVE;
+    }
+
+    // Good, database doesn't seem to be open -- attempt the delete
+    int rc = G_DB_ENV->dbremove(G_DB_ENV, 0, name, 0, DB_AUTO_COMMIT);
+    WRITE_UNLOCK(G_DATABASES_RWLOCK);
+    return rc;
+}
+
 /**
  * Given a target system parameter/action adjust/return the requested value
  */
@@ -729,16 +760,6 @@ static void tune_system(int target, void* values, BinHelper* bh)
 {
     switch(target) 
     {
-    case SYSP_CACHESIZE_SET:
-    {
-        unsigned int gbytes = UNPACK_INT(values, 0);
-        unsigned int bytes = UNPACK_INT(values, 4);
-        unsigned int ncache = UNPACK_INT(values, 8);
-        int rc = G_DB_ENV->set_cachesize(G_DB_ENV, gbytes, bytes, ncache);
-        bin_helper_init(bh, 4);
-        bin_helper_push_int32(bh, rc);
-        break;
-    }
     case SYSP_CACHESIZE_GET:
     {
         unsigned int gbytes = 0;
@@ -767,6 +788,23 @@ static void tune_system(int target, void* values, BinHelper* bh)
         bin_helper_init(bh, 8);
         bin_helper_push_int32(bh, rc);
         bin_helper_push_int32(bh, timeout);
+        break;
+    }
+    case SYSP_DATA_DIR_GET:
+    {
+        const char** dirs = 0;
+        int rc = G_DB_ENV->get_data_dirs(G_DB_ENV, &dirs);
+        printf("DATA DIR: %d\n", rc);
+        bin_helper_init(bh, 64);
+        bin_helper_push_int32(bh, rc);
+        if (dirs)
+        {
+            while (*dirs != 0)
+            {
+                bin_helper_push_string(bh, *dirs);
+                dirs++;
+            }
+        }
         break;
     }
     }

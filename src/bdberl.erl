@@ -10,7 +10,7 @@
          close/1, close/2,
          txn_begin/0, txn_begin/1, 
          txn_commit/0, txn_commit/1, txn_abort/0,
-         get_cache_size/0, set_cache_size/3,
+         get_cache_size/0, get_data_dirs/0,
          get_txn_timeout/0, set_txn_timeout/1,
          transaction/1, transaction/2,
          put/3, put/4,
@@ -20,6 +20,7 @@
          get/2, get/3,
          get_r/2, get_r/3,
          update/3, update/4,
+         delete_database/1,
          cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0]).
 
 -include("bdberl.hrl").
@@ -236,7 +237,35 @@ cursor_close() ->
         Reason ->
             {error, Reason}
     end.
-    
+
+delete_database(Filename) ->
+    Cmd = list_to_binary(Filename),
+    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
+    case decode_rc(Rc) of
+        ok ->
+            ok;
+        Reason ->
+            {error, Reason}
+    end.
+
+
+get_data_dirs() ->
+    %% Call into the BDB library and get a list of configured data directories
+    Cmd = <<?SYSP_DATA_DIR_GET:32/native>>,
+    <<Result:32/signed-native, Rest/bytes>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            Dirs = [binary_to_list(D) || D <- split_bin(0, Rest, <<>>, [])],
+            %% Make sure DB_HOME is part of the list
+            case lists:member(os:getenv("DB_HOME"), Dirs) of
+                true ->
+                    Dirs;
+                false ->
+                    [os:getenv("DB_HOME") | Dirs]
+            end;
+        Reason ->
+            {error, Reason}
+    end.
 
 get_cache_size() ->    
     Cmd = <<?SYSP_CACHESIZE_GET:32/native>>,
@@ -248,17 +277,6 @@ get_cache_size() ->
         _ ->
             {error, Result}
     end.
-
-set_cache_size(Gbytes, Bytes, Ncaches) ->
-    Cmd = <<?SYSP_CACHESIZE_SET:32/native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
-    case Result of
-        0 ->
-            ok;
-        _ ->
-            {error, Result}
-    end.
-    
 
 get_txn_timeout() ->    
     Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/native>>,
@@ -279,6 +297,7 @@ set_txn_timeout(Timeout) ->
         _ ->
             {error, Result}
     end.
+
 
 
 %% ====================================================================
@@ -404,3 +423,17 @@ do_cursor_move(Direction) ->
         Reason ->
             {error, Reason}
     end.
+
+
+
+%%
+%% Split a binary into pieces, using a single character delimiter
+%%
+split_bin(_Delimiter, <<>>, <<>>, Acc) ->
+    lists:reverse(Acc);
+split_bin(_Delimiter, <<>>, ItemAcc, Acc) ->
+    lists:reverse([ItemAcc | Acc]);
+split_bin(Delimiter, <<Delimiter:8, Rest/binary>>, ItemAcc, Acc) ->
+    split_bin(Delimiter, Rest, <<>> ,[ItemAcc | Acc]);
+split_bin(Delimiter, <<Other:8, Rest/binary>>, ItemAcc, Acc) ->
+    split_bin(Delimiter, Rest, <<ItemAcc/binary, Other:8>>, Acc).
