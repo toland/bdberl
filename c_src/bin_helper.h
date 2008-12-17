@@ -15,7 +15,7 @@ typedef struct
     unsigned int offset;
 } BinHelper;
 
-void bin_helper_init(BinHelper* bh, unsigned int size);
+void bin_helper_init(BinHelper* bh);
 void bin_helper_push_byte(BinHelper* bh, int value);
 void bin_helper_push_int32(BinHelper* bh, int value);
 void bin_helper_push_string(BinHelper* bh, const char* string);

@@ -30,9 +30,11 @@ all() ->
      delete_should_remove_file, 
      delete_should_fail_if_db_inuse].
 
+
 dbconfig(Config) ->
     Cfg = [{set_data_dir, ?config(priv_dir, Config)},
-           {set_flags, 'DB_TXN_NOSYNC'}],
+           {set_flags, 'DB_TXN_NOSYNC'},
+           {set_log_config, 'DB_LOG_IN_MEMORY'}],
     list_to_binary(lists:flatten([io_lib:format("~s ~s\n", [K,V]) || {K, V} <- Cfg])).
 
 
@@ -45,7 +47,8 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
     ok.
 
-init_per_testcase(_TestCase, Config) ->
+init_per_testcase(TestCase, Config) ->
+    ct:print("~p", [TestCase]),
     {ok, Db} = bdberl:open("api_test.db", btree, [create, exclusive]),
     [{db, Db}|Config].
 

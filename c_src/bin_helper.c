@@ -12,15 +12,19 @@
 
 static void bin_helper_check_size(BinHelper* bh, int space_needed)
 {
-    if (bh->offset + space_needed > bh->bin->orig_size)
+    if (bh->bin && (bh->offset + space_needed > bh->bin->orig_size))
     {
         bh->bin = driver_realloc_binary(bh->bin, bh->offset + space_needed);
     }
+    else if (!bh->bin)
+    {
+        bh->bin = driver_alloc_binary(space_needed);
+    }
 }
 
-void bin_helper_init(BinHelper* bh, unsigned int size)
+void bin_helper_init(BinHelper* bh)
 {
-    bh->bin = driver_alloc_binary(size);
+    bh->bin = 0;
     bh->offset = 0;
 }
 

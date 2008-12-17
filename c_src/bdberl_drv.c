@@ -122,7 +122,7 @@ static TPool* G_TPOOL_TXNS;
 
 #define RETURN_INT(val, outbuf) {             \
         BinHelper bh;                         \
-        bin_helper_init(&bh, 4);              \
+        bin_helper_init(&bh);                 \
         bin_helper_push_int32(&bh, val);      \
         RETURN_BH(bh, outbuf); }
 
@@ -351,7 +351,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Pack the status and dbref (or errno) into a binary and return it
         // Outbuf is: <<Status:8, DbRef:32>>
         BinHelper bh;
-        bin_helper_init(&bh, 5);
+        bin_helper_init(&bh);
         bin_helper_push_byte(&bh, status);
         bin_helper_push_int32(&bh, dbref);
         RETURN_BH(bh, outbuf);
@@ -748,6 +748,7 @@ static int delete_database(const char* name)
     }
 
     // Good, database doesn't seem to be open -- attempt the delete
+    DBG("Attempting to delete database: %s\n", name);
     int rc = G_DB_ENV->dbremove(G_DB_ENV, 0, name, 0, DB_AUTO_COMMIT);
     WRITE_UNLOCK(G_DATABASES_RWLOCK);
     return rc;
@@ -766,7 +767,7 @@ static void tune_system(int target, void* values, BinHelper* bh)
         unsigned int bytes = 0;
         int caches = 0;
         int rc = G_DB_ENV->get_cachesize(G_DB_ENV, &gbytes, &bytes, &caches);
-        bin_helper_init(bh, 16);
+        bin_helper_init(bh);
         bin_helper_push_int32(bh, rc);
         bin_helper_push_int32(bh, gbytes);
         bin_helper_push_int32(bh, bytes);
@@ -777,7 +778,7 @@ static void tune_system(int target, void* values, BinHelper* bh)
     {
         unsigned int timeout = UNPACK_INT(values, 0);
         int rc = G_DB_ENV->set_timeout(G_DB_ENV, timeout, DB_SET_TXN_TIMEOUT);
-        bin_helper_init(bh, 4);
+        bin_helper_init(bh);
         bin_helper_push_int32(bh, rc);
         break;
     }
@@ -785,7 +786,7 @@ static void tune_system(int target, void* values, BinHelper* bh)
     {
         unsigned int timeout = 0;
         int rc = G_DB_ENV->get_timeout(G_DB_ENV, &timeout, DB_SET_TXN_TIMEOUT);
-        bin_helper_init(bh, 8);
+        bin_helper_init(bh);
         bin_helper_push_int32(bh, rc);
         bin_helper_push_int32(bh, timeout);
         break;
@@ -794,16 +795,12 @@ static void tune_system(int target, void* values, BinHelper* bh)
     {
         const char** dirs = 0;
         int rc = G_DB_ENV->get_data_dirs(G_DB_ENV, &dirs);
-        printf("DATA DIR: %d\n", rc);
-        bin_helper_init(bh, 64);
+        bin_helper_init(bh);
         bin_helper_push_int32(bh, rc);
-        if (dirs)
+        while (dirs && *dirs)
         {
-            while (*dirs != 0)
-            {
-                bin_helper_push_string(bh, *dirs);
-                dirs++;
-            }
+            bin_helper_push_string(bh, *dirs);
+            dirs++;
         }
         break;
     }

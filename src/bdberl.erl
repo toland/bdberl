@@ -239,7 +239,7 @@ cursor_close() ->
     end.
 
 delete_database(Filename) ->
-    Cmd = list_to_binary(Filename),
+    Cmd = <<(list_to_binary(Filename))/binary, 0:8>>, 
     <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
