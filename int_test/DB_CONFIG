@@ -1,0 +1,5 @@
+set_flags DB_TXN_WRITE_NOSYNC
+set_cachesize 0 536870912 1
+set_lg_max 104857600
+set_lg_bsize 536870912
+set_log_config DB_LOG_IN_MEMORY

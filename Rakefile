@@ -37,6 +37,10 @@ task :test do
   run_tests "test", "+A10"
 end
 
+task :int_test do
+  run_tests "int_test", "+A10"
+end
+
 task :package => [:compile] do
   app = File.basename(APP, ".app")
   vsn = erl_app_version(app)
@@ -50,4 +54,3 @@ task :package => [:compile] do
   cp_r Dir.glob('c_src/system/bin/*'), "#{target_dir}/priv/bin"
   puts "Packaged to #{target_dir}"
 end
-
