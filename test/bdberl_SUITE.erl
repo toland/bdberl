@@ -10,7 +10,7 @@
 
 -include_lib("ct.hrl").
 
-ball() ->
+all() ->
     [open_should_create_database_if_none_exists,
      open_should_allow_opening_multiple_databases,
      close_should_fail_with_invalid_db_handle,
@@ -30,11 +30,16 @@ ball() ->
      delete_should_remove_file, 
      delete_should_fail_if_db_inuse].
 
+dbconfig(Config) ->
+    Cfg = [{set_data_dir, ?config(priv_dir, Config)},
+           {set_flags, 'DB_TXN_NOSYNC'}],
+    list_to_binary(lists:flatten([io_lib:format("~s ~s\n", [K,V]) || {K, V} <- Cfg])).
+
 
 init_per_suite(Config) ->
     DbHome = ?config(priv_dir, Config),
     os:putenv("DB_HOME", DbHome),
-    ok = file:write_file(DbHome ++ "DB_CONFIG", <<"set_data_dir ", (list_to_binary(DbHome))/binary, "\n">>),
+    ok = file:write_file(DbHome ++ "DB_CONFIG", dbconfig(Config)),
     Config.
 
 end_per_suite(_Config) ->
