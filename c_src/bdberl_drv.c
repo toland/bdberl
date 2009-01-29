@@ -1348,11 +1348,8 @@ static void* txn_checkpoint(void* arg)
     DBG("Checkpoint interval: %d seconds\n", G_CHECKPOINT_INTERVAL);
     while (G_CHECKPOINT_ACTIVE)
     {
-        int ret = 0;
-        if ((ret = G_DB_ENV->txn_checkpoint(G_DB_ENV, 0, 0, 0)) != 0)
-        {
-            G_DB_ENV->err(G_DB_ENV, ret, "checkpoint thread");
-        }
+        G_DB_ENV->txn_checkpoint(G_DB_ENV, 0, 0, 0);
+        G_DB_ENV->log_archive(G_DB_ENV, NULL, DB_ARCH_REMOVE);
 
 #ifdef DEBUG
         time_t tm = time(NULL);
