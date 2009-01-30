@@ -1346,17 +1346,29 @@ static void* trickle_write(void* arg)
 static void* txn_checkpoint(void* arg)
 {
     DBG("Checkpoint interval: %d seconds\n", G_CHECKPOINT_INTERVAL);
+
+    int elapsed_secs = 0;
     while (G_CHECKPOINT_ACTIVE)
     {
-        G_DB_ENV->txn_checkpoint(G_DB_ENV, 0, 0, 0);
-        G_DB_ENV->log_archive(G_DB_ENV, NULL, DB_ARCH_REMOVE);
+        if (elapsed_secs == G_CHECKPOINT_INTERVAL)
+        {
+            G_DB_ENV->txn_checkpoint(G_DB_ENV, 0, 0, 0);
+            G_DB_ENV->log_archive(G_DB_ENV, NULL, DB_ARCH_REMOVE);
 
 #ifdef DEBUG
-        time_t tm = time(NULL);
-        printf("Transaction checkpoint complete at %s\n", ctime(&tm));
+            time_t tm = time(NULL);
+            printf("Transaction checkpoint complete at %s\n", ctime(&tm));
 #endif
 
-        sleep(G_CHECKPOINT_INTERVAL);
+            // Reset the counter
+            elapsed_secs = 0;
+        }
+        else
+        {
+            // TODO: Use nanosleep
+            usleep(1000 * 1000);    /* Sleep for 1 second */
+            elapsed_secs++;
+        }
     }
 
     DBG("Checkpointer exiting.\n");
