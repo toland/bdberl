@@ -20,6 +20,7 @@
          get/2, get/3,
          get_r/2, get_r/3,
          update/3, update/4,
+         truncate/1,
          delete_database/1,
          cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0]).
 
@@ -208,6 +209,20 @@ update(Db, Key, Fun, Args) ->
             NewValue
         end,
     transaction(F).
+
+truncate(Db) ->
+    Cmd = <<Db:32/native>>,
+    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TRUNCATE, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, {truncate, decode_rc(Reason)}}
+            end;
+
+        Error ->
+            {error, {truncate, decode_rc(Error)}}
+    end.
 
 cursor_open(Db) ->
     Cmd = <<Db:32/native, 0:32/native>>,

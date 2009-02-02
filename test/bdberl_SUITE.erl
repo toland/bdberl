@@ -28,7 +28,8 @@ all() ->
      put_commit_should_end_txn,
      data_dir_should_be_priv_dir,
      delete_should_remove_file, 
-     delete_should_fail_if_db_inuse].
+     delete_should_fail_if_db_inuse,
+     truncate_should_empty_database].
 
 
 dbconfig(Config) ->
@@ -212,3 +213,9 @@ delete_should_fail_if_db_inuse(Config) ->
     true = filelib:is_file(Fname),
     {error, _} = bdberl:delete_database(Fname),
     true = filelib:is_file(Fname).
+
+truncate_should_empty_database(Config) ->
+    Db = ?config(db, Config),
+    ok = bdberl:put(Db, mykey, avalue),
+    ok = bdberl:truncate(Db),
+    not_found = bdberl:get(Db, mykey).
