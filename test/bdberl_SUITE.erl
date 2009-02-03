@@ -174,7 +174,7 @@ cursor_should_iterate(Config) ->
     
     ok = bdberl:cursor_close().
 
-cursor_should_fail_if_not_open(Config) ->
+cursor_should_fail_if_not_open(_Config) ->
     {error, no_cursor} = bdberl:cursor_next(),
     {error, no_cursor} = bdberl:cursor_prev(),
     {error, no_cursor} = bdberl:cursor_current(),
