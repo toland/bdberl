@@ -156,7 +156,7 @@ static TPool* G_TPOOL_TXNS;
 
 DRIVER_INIT(bdberl_drv) 
 {
-    DBG("DRIVER INIT\n");
+    DBG("DRIVER INIT\r\n");
     // Setup flags we'll use to init the environment
     int flags = 
         DB_INIT_LOCK |          /* Enable support for locking */
@@ -287,9 +287,9 @@ static void bdberl_drv_stop(ErlDrvData handle)
         // Drop the lock prior to starting the wait for the async process
         erl_drv_mutex_unlock(d->port_lock);
 
-        DBG("Cancelling async job for port: %p\n", d->port);
+        DBG("Cancelling async job for port: %p\r\n", d->port);
         bdberl_tpool_cancel(d->async_pool, d->async_job);
-        DBG("Canceled async job for port: %p\n", d->port);
+        DBG("Canceled async job for port: %p\r\n", d->port);
     }
     else
     {
@@ -318,7 +318,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
         close_database(d->dbrefs->dbref, 0, d);
     }
 
-    DBG("Stopped port: %p\n", d->port);
+    DBG("Stopped port: %p\r\n", d->port);
     
     // Release the port instance data
     driver_free(d->work_buffer);
@@ -782,7 +782,7 @@ static int close_database(int dbref, unsigned flags, PortData* data)
         Database* database = &G_DATABASES[dbref];
         if (database->ports == 0)
         {
-            DBG("Closing actual database for dbref %d\n", dbref);
+            DBG("Closing actual database for dbref %d\r\n", dbref);
             // Close out the BDB handle
             database->db->close(database->db, flags);
         
@@ -816,7 +816,7 @@ static int delete_database(const char* name)
     }
 
     // Good, database doesn't seem to be open -- attempt the delete
-    DBG("Attempting to delete database: %s\n", name);
+    DBG("Attempting to delete database: %s\r\n", name);
     int rc = G_DB_ENV->dbremove(G_DB_ENV, 0, name, 0, DB_AUTO_COMMIT);
     WRITE_UNLOCK(G_DATABASES_RWLOCK);
     return rc;
@@ -1150,7 +1150,7 @@ static void do_async_truncate(void* arg)
     int dbref = UNPACK_INT(d->work_buffer, 0);
     DB* db = G_DATABASES[dbref].db;
 
-    DBG("Truncating dbref %i\n", dbref);
+    DBG("Truncating dbref %i\r\n", dbref);
 
     u_int32_t count = 0;
     int rc = db->truncate(db, d->txn, &count, 0);
@@ -1378,14 +1378,14 @@ static void* deadlock_check(void* arg)
         G_DB_ENV->lock_detect(G_DB_ENV, 0, DB_LOCK_DEFAULT, &count);
         if (count > 0)
         {
-            DBG("Rejected deadlocks: %d\n", count);
+            DBG("Rejected deadlocks: %d\r\n", count);
         }
 
         // TODO: Use nanosleep
         usleep(G_DEADLOCK_CHECK_INTERVAL * 1000);
     }
 
-    DBG("Deadlock checker exiting.\n");
+    DBG("Deadlock checker exiting.\r\n");
     return 0;
 }
 
@@ -1402,7 +1402,7 @@ static void* trickle_write(void* arg)
             // Enough time has passed -- time to run the trickle operation again
             int pages_wrote = 0;
             G_DB_ENV->memp_trickle(G_DB_ENV, G_TRICKLE_PERCENTAGE, &pages_wrote);
-            DBG("Wrote %d pages to achieve %d trickle\n", pages_wrote, G_TRICKLE_PERCENTAGE);
+            DBG("Wrote %d pages to achieve %d trickle\r\n", pages_wrote, G_TRICKLE_PERCENTAGE);
 
             // Reset the counter
             elapsed_secs = 0;
@@ -1415,7 +1415,7 @@ static void* trickle_write(void* arg)
         }
     }
 
-    DBG("Trickle writer exiting.\n");
+    DBG("Trickle writer exiting.\r\n");
     return 0;
 }
 
@@ -1424,7 +1424,7 @@ static void* trickle_write(void* arg)
  */
 static void* txn_checkpoint(void* arg)
 {
-    DBG("Checkpoint interval: %d seconds\n", G_CHECKPOINT_INTERVAL);
+    DBG("Checkpoint interval: %d seconds\r\n", G_CHECKPOINT_INTERVAL);
 
     int elapsed_secs = 0;
     while (G_CHECKPOINT_ACTIVE)
@@ -1436,7 +1436,7 @@ static void* txn_checkpoint(void* arg)
 
 #ifdef DEBUG
             time_t tm = time(NULL);
-            printf("Transaction checkpoint complete at %s\n", ctime(&tm));
+            printf("Transaction checkpoint complete at %s\r\n", ctime(&tm));
 #endif
 
             // Reset the counter
@@ -1450,7 +1450,7 @@ static void* txn_checkpoint(void* arg)
         }
     }
 
-    DBG("Checkpointer exiting.\n");
+    DBG("Checkpointer exiting.\r\n");
     return 0;
 }
 
