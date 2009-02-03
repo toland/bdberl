@@ -20,7 +20,7 @@
          get/2, get/3,
          get_r/2, get_r/3,
          update/3, update/4,
-         truncate/1,
+         truncate/0, truncate/1,
          delete_database/1,
          cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0]).
 
@@ -209,6 +209,9 @@ update(Db, Key, Fun, Args) ->
             NewValue
         end,
     transaction(F).
+
+truncate() ->
+    truncate(-1).
 
 truncate(Db) ->
     Cmd = <<Db:32/native>>,

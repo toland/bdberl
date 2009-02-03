@@ -621,8 +621,10 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Make sure this port currently has dbref open -- if it doesn't, error out. Of note,
         // if it's in our list, we don't need to grab the RWLOCK, as we don't have to worry about
         // the underlying handle disappearing since we have a reference.
-        if (has_dbref(d, dbref))
+        if (dbref == -1 || has_dbref(d, dbref))
         {
+            memcpy(d->work_buffer, inbuf, inbuf_sz);
+
             // Mark the port as busy and then schedule the appropriate async operation
             d->async_op = cmd;
             d->async_pool = G_TPOOL_GENERAL;
@@ -1110,12 +1112,42 @@ static void do_async_truncate(void* arg)
 
     // Get the database reference and flags from the payload
     int dbref = UNPACK_INT(d->work_buffer, 0);
-    DB* db = G_DATABASES[dbref].db;
+    int rc = 0;
 
-    DBG("Truncating dbref %i\r\n", dbref);
+    if (dbref == -1)
+    {
+        DBG("Truncating all open databases...\r\n");
 
-    u_int32_t count = 0;
-    int rc = db->truncate(db, d->txn, &count, 0);
+        // Iterate over the whole database list skipping null entries
+        int i = 0; // I hate C
+        for ( ; i < G_DATABASES_SIZE; ++i)
+        {
+            Database* database = &G_DATABASES[i];
+            if (database != NULL && database->db != 0)
+            {
+                DB* db = database->db;
+
+                DBG("Truncating dbref %i\r\n", i);
+
+                u_int32_t count = 0;
+                rc = db->truncate(db, d->txn, &count, 0);
+
+                if (rc != 0)
+                {
+                    break;
+                }
+            }
+        }
+    }
+    else
+    {
+        DB* db = G_DATABASES[dbref].db;
+
+        DBG("Truncating dbref %i\r\n", dbref);
+
+        u_int32_t count = 0;
+        rc = db->truncate(db, d->txn, &count, 0);
+    }
 
     // If any error occurs while we have a txn action, abort it
     if (d->txn && rc)

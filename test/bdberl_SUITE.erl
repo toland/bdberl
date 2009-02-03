@@ -29,7 +29,8 @@ all() ->
      data_dir_should_be_priv_dir,
      delete_should_remove_file, 
      delete_should_fail_if_db_inuse,
-     truncate_should_empty_database].
+     truncate_should_empty_database,
+     truncate_all_should_empty_all_databases].
 
 
 dbconfig(Config) ->
@@ -218,4 +219,10 @@ truncate_should_empty_database(Config) ->
     Db = ?config(db, Config),
     ok = bdberl:put(Db, mykey, avalue),
     ok = bdberl:truncate(Db),
+    not_found = bdberl:get(Db, mykey).
+
+truncate_all_should_empty_all_databases(Config) ->
+    Db = ?config(db, Config),
+    ok = bdberl:put(Db, mykey, avalue),
+    ok = bdberl:truncate(),
     not_found = bdberl:get(Db, mykey).
