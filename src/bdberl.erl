@@ -174,7 +174,7 @@ get(Db, Key, Opts) ->
     case decode_rc(Result) of
         ok ->
             receive
-                {ok, Bin} -> {ok, binary_to_term(Bin)};
+                {ok, _, Bin} -> {ok, binary_to_term(Bin)};
                 not_found -> not_found;
                 {error, Reason} -> {error, {get, decode_rc(Reason)}}
             end;
