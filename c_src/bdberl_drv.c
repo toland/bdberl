@@ -620,14 +620,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Inbuf is: <<DbRef:32>>
         int dbref = UNPACK_INT(inbuf, 0);
 
-        DBG("Truncating...\n");
-
         // Make sure this port currently has dbref open -- if it doesn't, error out. Of note,
         // if it's in our list, we don't need to grab the RWLOCK, as we don't have to worry about
         // the underlying handle disappearing since we have a reference.
         if (has_dbref(d, dbref))
         {
-            DBG("Doing truncate....");
             // Mark the port as busy and then schedule the appropriate async operation
             d->async_op = cmd;
             d->async_pool = G_TPOOL_GENERAL;
