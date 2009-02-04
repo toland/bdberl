@@ -7,3 +7,4 @@ test/logs
 test/test.cover
 int_test/logs
 int_test/test.cover
+bdberl-*
