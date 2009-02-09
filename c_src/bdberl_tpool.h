@@ -60,7 +60,8 @@ TPool* bdberl_tpool_start(unsigned int thread_count);
 
 void   bdberl_tpool_stop(TPool* tpool);
 
-TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJobFunc cancel_fn);
+void bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJobFunc cancel_fn,
+    TPoolJob** job_ptr);
 
 void bdberl_tpool_cancel(TPool* tpool, TPoolJob* job);
 

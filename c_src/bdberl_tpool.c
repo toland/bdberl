@@ -74,10 +74,11 @@ void bdberl_tpool_stop(TPool* tpool)
     driver_free(tpool);
 }
 
-TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJobFunc cancel_fn)
+void bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJobFunc cancel_fn, 
+                      TPoolJob** job_ptr)
 {
     // Allocate and fill a new job structure
-    TPoolJob* job = driver_alloc(sizeof(TPoolJob));
+    TPoolJob* job = *job_ptr = driver_alloc(sizeof(TPoolJob));
     memset(job, '\0', sizeof(TPoolJob));
     job->main_fn = main_fn;
     job->arg = arg;
@@ -105,7 +106,6 @@ TPoolJob* bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJ
     // pending jobs. Not sure ATM, however, so will be on safe side
     erl_drv_cond_broadcast(tpool->work_cv);
     UNLOCK(tpool);
-    return job;
 }
 
 void bdberl_tpool_cancel(TPool* tpool, TPoolJob* job)
