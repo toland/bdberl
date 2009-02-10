@@ -63,6 +63,9 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
  * Error codes -- chosen so that we do not conflict with other packages, particularly
  * db.h. We use error namespace from -29000 to -29500.
  */
+#ifndef ERROR_NONE
+#  define ERROR_NONE        0
+#endif
 #define ERROR_MAX_DBS       (-29000) /* System can not open any further databases  */
 #define ERROR_ASYNC_PENDING (-29001) /* Async operation already pending on this port */
 #define ERROR_INVALID_DBREF (-29002) /* DbRef not currently opened by this port */

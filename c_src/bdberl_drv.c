@@ -49,7 +49,7 @@ static void* txn_checkpoint(void* arg);
 /**
  * Global instance of DB_ENV; only a single one exists per O/S process.
  */
-static DB_ENV* G_DB_ENV;
+static DB_ENV* G_DB_ENV = 0;
 
 
 /**
@@ -57,7 +57,7 @@ static DB_ENV* G_DB_ENV;
  * value so as to provide a useful error code when the user attempts to open the
  * port and it fails due to an error that occurred when opening the environment.
  */
-static int G_DB_ENV_ERROR;
+static int G_DB_ENV_ERROR = 0;
 
 
 /**
@@ -72,17 +72,17 @@ static int G_DB_ENV_ERROR;
  * All access to G_DATABASES and G_DATABASES_NAMES must be protected by the read/write lock
  * G_DATABASES_RWLOCK.
  */
-static Database*     G_DATABASES;
-static int           G_DATABASES_SIZE;
-static ErlDrvRWLock* G_DATABASES_RWLOCK;
-static hive_hash*    G_DATABASES_NAMES;
+static Database*     G_DATABASES        = 0;
+static int           G_DATABASES_SIZE   = 0;
+static ErlDrvRWLock* G_DATABASES_RWLOCK = 0;
+static hive_hash*    G_DATABASES_NAMES  = 0;
 
 
 /**
  * Deadlock detector thread variables. We run a single thread per VM to detect deadlocks within
  * our global environment. G_DEADLOCK_CHECK_INTERVAL is the time between runs in milliseconds.
  */
-static ErlDrvTid    G_DEADLOCK_THREAD;
+static ErlDrvTid    G_DEADLOCK_THREAD         = 0;
 static unsigned int G_DEADLOCK_CHECK_ACTIVE   = 1;
 static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100; /* Milliseconds between checks */
 
@@ -91,7 +91,7 @@ static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100; /* Milliseconds between che
  * Trickle writer for dirty pages. We run a single thread per VM to perform background
  * trickling of dirty pages to disk. G_TRICKLE_INTERVAL is the time between runs in seconds.
  */
-static ErlDrvTid    G_TRICKLE_THREAD;
+static ErlDrvTid    G_TRICKLE_THREAD     = 0;
 static unsigned int G_TRICKLE_ACTIVE     = 1;
 static unsigned int G_TRICKLE_INTERVAL   = 60 * 15; /* Seconds between trickle writes */
 static unsigned int G_TRICKLE_PERCENTAGE = 10;      /* Desired % of clean pages in cache */
@@ -102,7 +102,7 @@ static unsigned int G_TRICKLE_PERCENTAGE = 10;      /* Desired % of clean pages 
  * logs into the backing data store. G_CHECKPOINT_INTERVAL is the time between runs in seconds.
  * TODO The interval should be configurable.
  */
-static ErlDrvTid    G_CHECKPOINT_THREAD;
+static ErlDrvTid    G_CHECKPOINT_THREAD   = 0;
 static unsigned int G_CHECKPOINT_ACTIVE   = 1;
 static unsigned int G_CHECKPOINT_INTERVAL = 60 * 60; /* Seconds between checkpoints */
 
@@ -110,8 +110,8 @@ static unsigned int G_CHECKPOINT_INTERVAL = 60 * 60; /* Seconds between checkpoi
 /**
  *
  */
-static TPool* G_TPOOL_GENERAL;
-static TPool* G_TPOOL_TXNS;
+static TPool* G_TPOOL_GENERAL = NULL;
+static TPool* G_TPOOL_TXNS    = NULL;
 
 
 /**
@@ -800,7 +800,7 @@ static int close_database(int dbref, unsigned flags, PortData* data)
         }
 
         WRITE_UNLOCK(G_DATABASES_RWLOCK);
-        return 0;
+        return ERROR_NONE;
     }
     else
     {
