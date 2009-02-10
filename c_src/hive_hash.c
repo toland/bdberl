@@ -6,7 +6,7 @@
  *
  * Dave Smith (dsmith@thehive.com) 12/08
  */
-
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -75,12 +75,14 @@ static unsigned int strhash(const char *str)
 
 hive_hash * hive_hash_new(unsigned int capacity) {
     struct hive_hash *h;
-    int i, sind;
+    int i, sind = sizes_count;
 
     capacity /= load_factor;
 
+    // JDM:  This can leave sind uninitialized
     for (i=0; i < sizes_count; i++) 
         if (sizes[i] > capacity) { sind = i; break; }
+    assert(sizes_count != sind);
 
     if ((h = malloc(sizeof(struct hive_hash))) == NULL) return NULL;
     if ((h->records = calloc(sizes[sind], sizeof(struct record))) == NULL) {
