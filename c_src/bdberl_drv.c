@@ -168,9 +168,24 @@ DRIVER_INIT(bdberl_drv)
 
     // Initialize global environment -- use environment variable DB_HOME to 
     // specify where the working directory is
-    db_env_create(&G_DB_ENV, 0);
+    G_DB_ENV_ERROR = db_env_create(&G_DB_ENV, 0); 
+    if (G_DB_ENV_ERROR != 0)
+    {
+        G_DB_ENV = 0;
+    }
+    else
+    {
+        G_DB_ENV_ERROR = G_DB_ENV->open(G_DB_ENV, 0, flags, 0);
+        if (G_DB_ENV_ERROR != 0)
+        {
+            // Something bad happened while initializing BDB; in this situation we 
+            // cleanup and set the environment to zero. Attempts to open ports will
+            // fail and the user will have to sort out how to resolve the issue.
+            G_DB_ENV->close(G_DB_ENV, 0);
+            G_DB_ENV = 0;
+        }
+    }
 
-    G_DB_ENV_ERROR = G_DB_ENV->open(G_DB_ENV, 0, flags, 0);
     if (G_DB_ENV_ERROR == 0)
     {
         // Use the BDBERL_MAX_DBS environment value to determine the max # of
@@ -227,14 +242,6 @@ DRIVER_INIT(bdberl_drv)
         // TODO: Make configurable/adjustable
         G_TPOOL_GENERAL = bdberl_tpool_start(10);
         G_TPOOL_TXNS    = bdberl_tpool_start(10);
-    }
-    else
-    {
-        // Something bad happened while initializing BDB; in this situation we 
-        // cleanup and set the environment to zero. Attempts to open ports will
-        // fail and the user will have to sort out how to resolve the issue.
-        G_DB_ENV->close(G_DB_ENV, 0);
-        G_DB_ENV = 0;
     }
 
     return &bdberl_drv_entry;
@@ -491,8 +498,9 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             {
                 fn = &do_async_put;
             }
-            else if (cmd == CMD_GET)
+            else 
             {
+                assert(cmd == CMD_GET);
                 fn = &do_async_get;
             }
             d->async_pool = G_TPOOL_GENERAL;
