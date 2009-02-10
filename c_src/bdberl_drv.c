@@ -454,7 +454,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             d->async_flags = UNPACK_INT(inbuf, 0);
         }
         d->async_pool = G_TPOOL_TXNS;
-        d->async_job  = bdberl_tpool_run(G_TPOOL_TXNS, &do_async_txnop, d, 0);
+        bdberl_tpool_run(d->async_pool, &do_async_txnop, d, 0, &d->async_job);
 
         // Outbuf is <<Rc:32>>
         RETURN_INT(0, outbuf);
@@ -504,8 +504,8 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
                 fn = &do_async_get;
             }
             d->async_pool = G_TPOOL_GENERAL;
-            d->async_job = bdberl_tpool_run(G_TPOOL_GENERAL, fn, d, 0);
-
+            bdberl_tpool_run(d->async_pool, fn, d, 0, &d->async_job);
+        
             // Let caller know that the operation is in progress
             // Outbuf is: <<0:32>>
             RETURN_INT(0, outbuf);
@@ -569,7 +569,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Schedule the operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
-        d->async_job  = bdberl_tpool_run(G_TPOOL_GENERAL, &do_async_cursor_get, d, 0);
+        bdberl_tpool_run(d->async_pool, &do_async_cursor_get, d, 0, &d->async_job);
 
         // Let caller know operation is in progress
         RETURN_INT(0, outbuf);
@@ -636,7 +636,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             // Mark the port as busy and then schedule the appropriate async operation
             d->async_op = cmd;
             d->async_pool = G_TPOOL_GENERAL;
-            d->async_job = bdberl_tpool_run(G_TPOOL_GENERAL, &do_async_truncate, d, 0);
+            bdberl_tpool_run(d->async_pool, &do_async_truncate, d, 0, &d->async_job);
 
             // Let caller know that the operation is in progress
             // Outbuf is: <<0:32>>
