@@ -349,20 +349,22 @@ static void bdberl_drv_finish()
     bdberl_tpool_stop(G_TPOOL_GENERAL);
     bdberl_tpool_stop(G_TPOOL_TXNS);
 
+    // Signal the utility threads time is up
+    G_TRICKLE_ACTIVE = 0;
+    G_DEADLOCK_CHECK_ACTIVE = 0;
+    G_CHECKPOINT_ACTIVE = 0;
+
     // Close the writer fd on the pipe to signal finish to the utility threads
     close(G_BDBERL_PIPE[1]);
     G_BDBERL_PIPE[1] = -1;
 
-    // Signal the trickle write thread to shutdown
-    G_TRICKLE_ACTIVE = 0;
+    // Wait for the trickle write thread to shutdown
     erl_drv_thread_join(G_TRICKLE_THREAD, 0);
 
-    // Signal the deadlock checker to shutdown -- then wait for it
-    G_DEADLOCK_CHECK_ACTIVE = 0;
+    // Wait for the deadlock checker to shutdown -- then wait for it
     erl_drv_thread_join(G_DEADLOCK_THREAD, 0);
 
-    // Signal the checkpointer to shutdown -- then wait for it
-    G_CHECKPOINT_ACTIVE = 0;
+    // Wait for the checkpointer to shutdown -- then wait for it
     erl_drv_thread_join(G_CHECKPOINT_THREAD, 0);
 
     // Close the reader fd on the pipe now utility threads are closed
@@ -1445,7 +1447,11 @@ static void* deadlock_check(void* arg)
     {
         // Run the lock detection
         int count = 0;
-        G_DB_ENV->lock_detect(G_DB_ENV, 0, DB_LOCK_DEFAULT, &count);
+        int rc = G_DB_ENV->lock_detect(G_DB_ENV, 0, DB_LOCK_DEFAULT, &count);
+        if (0 != rc)
+        {
+            DBG("lock_detect returned %s(%d)\n", db_strerror(rc), rc);
+        }
         if (count > 0)
         {
             DBG("Rejected deadlocks: %d\r\n", count);
@@ -1467,7 +1473,11 @@ static void* trickle_write(void* arg)
     {
         // Enough time has passed -- time to run the trickle operation again
         int pages_wrote = 0;
-        G_DB_ENV->memp_trickle(G_DB_ENV, G_TRICKLE_PERCENTAGE, &pages_wrote);
+        int rc = G_DB_ENV->memp_trickle(G_DB_ENV, G_TRICKLE_PERCENTAGE, &pages_wrote);
+        if (0 != rc)
+        {
+            DBG("memp_trickle returned %s(%d)\n", db_strerror(rc), rc);
+        }
         DBG("Wrote %d pages to achieve %d trickle\r\n", pages_wrote, G_TRICKLE_PERCENTAGE);
 
         util_thread_usleep(G_TRICKLE_INTERVAL * 1000000);
@@ -1486,8 +1496,17 @@ static void* txn_checkpoint(void* arg)
 
     while (G_CHECKPOINT_ACTIVE)
     {
-            G_DB_ENV->txn_checkpoint(G_DB_ENV, 0, 0, 0);
-            G_DB_ENV->log_archive(G_DB_ENV, NULL, DB_ARCH_REMOVE);
+            int rc = G_DB_ENV->txn_checkpoint(G_DB_ENV, 0, 0, 0);
+            if (0 != rc)
+            {
+                DBG("txn_checkpoint returned %s(%d)\n", db_strerror(rc), rc);
+            }
+            
+            rc = G_DB_ENV->log_archive(G_DB_ENV, NULL, DB_ARCH_REMOVE);
+            if (0 != rc)
+            {
+                DBG("log_archive returned %s(%d)\n", db_strerror(rc), rc);
+            }
 
 #ifdef DEBUG
             time_t tm = time(NULL);
