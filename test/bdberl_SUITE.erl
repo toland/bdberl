@@ -56,7 +56,7 @@ init_per_testcase(TestCase, Config) ->
 
 end_per_testcase(_TestCase, Config) ->
     ok = bdberl:close(?config(db, Config)),
-    ok = file:delete(filename:join([?config(priv_dir, Config), "api_test.db"])).
+    ok = bdberl:delete_database("api_test.db").
 
 
 open_should_create_database_if_none_exists(Config) ->
