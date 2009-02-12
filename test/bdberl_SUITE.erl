@@ -21,6 +21,7 @@ all() ->
      transaction_should_commit_on_success,
      transaction_should_abort_on_exception,
      transaction_should_abort_on_user_abort,
+     transaction_error_should_return_error, 
      update_should_save_value_if_successful,
      update_should_accept_args_for_fun,
      port_should_tune_transaction_timeouts,
@@ -57,7 +58,6 @@ init_per_testcase(TestCase, Config) ->
 end_per_testcase(_TestCase, Config) ->
     ok = bdberl:close(?config(db, Config)),
     ok = bdberl:delete_database("api_test.db").
-
 
 open_should_create_database_if_none_exists(Config) ->
     DbName = filename:join([?config(priv_dir, Config), "api_test.db"]),
@@ -119,6 +119,20 @@ transaction_should_abort_on_user_abort(Config) ->
 
     {error, transaction_aborted} = bdberl:transaction(F),
     not_found = bdberl:get(Db, mykey).
+
+transaction_error_should_return_error(Config) ->
+    {skip, waiting_on_bug_818}.
+%%     Db = ?config(db, Config),
+%%     F = fun() -> 
+%%                 bdberl:put(Db, mykey, should_not_see_this),
+%%                 %% Explicitly kill the transaction so that when transaction/2
+%%                 %% tries to commit it will fail
+%%                 bdberl:txn_abort(),
+%%                 %% Value to return
+%%                 avalue
+%%         end,
+%%     %% This should fail as there is no transaction to commit
+%%     {error,{txn_commit,no_txn}} = bdberl:transaction(F).
 
 update_should_save_value_if_successful(Config) ->
     Db = ?config(db, Config),
