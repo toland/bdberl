@@ -906,10 +906,10 @@ static void tune_system(int target, void* values, BinHelper* bh)
 static void async_cleanup(PortData* d)
 {
     // Release the port for another operation
-    d->async_pool = 0;
-    d->async_job  = 0;
     d->work_buffer_offset = 0;
     erl_drv_mutex_lock(d->port_lock);
+    d->async_pool = 0;
+    d->async_job  = 0;
     d->async_op = CMD_NONE;
     erl_drv_mutex_unlock(d->port_lock);
 }
