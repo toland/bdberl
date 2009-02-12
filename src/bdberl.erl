@@ -39,11 +39,11 @@ open(Name, Type, Opts) ->
         hash  -> TypeCode = ?DB_TYPE_HASH
     end,
     Flags = process_flags(lists:umerge(Opts, [auto_commit, threaded])),
-    Cmd = <<Flags:32/unsigned-native-integer, TypeCode:8/native-integer, (list_to_binary(Name))/bytes, 0:8/native-integer>>,
+    Cmd = <<Flags:32/native, TypeCode:8/signed-native, (list_to_binary(Name))/bytes, 0:8/native>>,
     case erlang:port_control(get_port(), ?CMD_OPEN_DB, Cmd) of
-        <<?STATUS_OK:8, Db:32/native>> ->
+        <<?STATUS_OK:8, Db:32/signed-native>> ->
             {ok, Db};
-        <<?STATUS_ERROR:8, Errno:32/native>> ->
+        <<?STATUS_ERROR:8, Errno:32/signed-native>> ->
             {error, Errno}
     end.
 
@@ -52,8 +52,8 @@ close(Db) ->
 
 close(Db, Opts) ->
     Flags = process_flags(Opts),
-    Cmd = <<Db:32/native-integer, Flags:32/unsigned-native-integer>>,
-    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_CLOSE_DB, Cmd),
+    Cmd = <<Db:32/signed-native, Flags:32/native>>,
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CLOSE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
             ok;
@@ -66,8 +66,8 @@ txn_begin() ->
 
 txn_begin(Opts) ->
     Flags = process_flags(Opts),
-    Cmd = <<Flags:32/unsigned-native>>,
-    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
     case decode_rc(Result) of
         ok -> ok;
         Error -> {error, {txn_begin, Error}}
@@ -78,8 +78,8 @@ txn_commit() ->
 
 txn_commit(Opts) ->
     Flags = process_flags(Opts),
-    Cmd = <<Flags:32/unsigned-native>>,
-    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TXN_COMMIT, Cmd),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_COMMIT, Cmd),
     case decode_rc(Result) of
         ok ->
             receive
@@ -91,7 +91,7 @@ txn_commit(Opts) ->
     end.
 
 txn_abort() ->
-    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TXN_ABORT, <<>>),
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_ABORT, <<>>),
     case decode_rc(Result) of
         ok ->
             receive
@@ -169,8 +169,8 @@ get(Db, Key) ->
 get(Db, Key, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
     Flags = process_flags(Opts),
-    Cmd = <<Db:32/native, Flags:32/unsigned-native, KeyLen:32/native, KeyBin/bytes>>,
-    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_GET, Cmd),
+    Cmd = <<Db:32/signed-native, Flags:32/native, KeyLen:32/native, KeyBin/bytes>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_GET, Cmd),
     case decode_rc(Result) of
         ok ->
             receive
@@ -214,8 +214,8 @@ truncate() ->
     truncate(-1).
 
 truncate(Db) ->
-    Cmd = <<Db:32/native>>,
-    <<Result:32/native-signed>> = erlang:port_control(get_port(), ?CMD_TRUNCATE, Cmd),
+    Cmd = <<Db:32/signed-native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TRUNCATE, Cmd),
     case decode_rc(Result) of
         ok ->
             receive
@@ -228,8 +228,8 @@ truncate(Db) ->
     end.
 
 cursor_open(Db) ->
-    Cmd = <<Db:32/native, 0:32/native>>,
-    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_CURSOR_OPEN, Cmd),
+    Cmd = <<Db:32/signed-native, 0:32/native>>,
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_OPEN, Cmd),
     case decode_rc(Rc) of
         ok ->
             ok;
@@ -248,7 +248,7 @@ cursor_current() ->
     do_cursor_move(?CMD_CURSOR_CURR).
 
 cursor_close() ->
-    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
     case decode_rc(Rc) of
         ok ->
             ok;
@@ -258,7 +258,7 @@ cursor_close() ->
 
 delete_database(Filename) ->
     Cmd = <<(list_to_binary(Filename))/binary, 0:8>>, 
-    <<Rc:32/native-signed>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
             ok;
@@ -269,7 +269,7 @@ delete_database(Filename) ->
 
 get_data_dirs() ->
     %% Call into the BDB library and get a list of configured data directories
-    Cmd = <<?SYSP_DATA_DIR_GET:32/native>>,
+    Cmd = <<?SYSP_DATA_DIR_GET:32/signed-native>>,
     <<Result:32/signed-native, Rest/bytes>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
     case decode_rc(Result) of
         ok ->
@@ -286,7 +286,7 @@ get_data_dirs() ->
     end.
 
 get_cache_size() ->    
-    Cmd = <<?SYSP_CACHESIZE_GET:32/native>>,
+    Cmd = <<?SYSP_CACHESIZE_GET:32/signed-native>>,
     <<Result:32/signed-native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>> = 
         erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
     case Result of
@@ -297,7 +297,7 @@ get_cache_size() ->
     end.
 
 get_txn_timeout() ->    
-    Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/native>>,
+    Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/signed-native>>,
     <<Result:32/signed-native, Timeout:32/native>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
     case Result of
         0 ->
@@ -307,7 +307,7 @@ get_txn_timeout() ->
     end.
 
 set_txn_timeout(Timeout) ->
-    Cmd = <<?SYSP_TXN_TIMEOUT_SET:32/native, Timeout:32/native>>,
+    Cmd = <<?SYSP_TXN_TIMEOUT_SET:32/signed-native, Timeout:32/native>>,
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
     case Result of
         0 ->
@@ -409,8 +409,8 @@ do_put(Action, Db, Key, Value, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
     {ValLen, ValBin} = to_binary(Value),
     Flags = process_flags(Opts),
-    Cmd = <<Db:32/native, Flags:32/unsigned-native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
-    <<Result:32/native>> = erlang:port_control(get_port(), Action, Cmd),
+    Cmd = <<Db:32/signed-native, Flags:32/native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), Action, Cmd),
     case decode_rc(Result) of
         ok ->
             receive
@@ -427,7 +427,7 @@ do_put(Action, Db, Key, Value, Opts) ->
 %% Move the cursor in a given direction. Invoked by cursor_next/prev/current.
 %%
 do_cursor_move(Direction) ->            
-    <<Rc:32/native-signed>> = erlang:port_control(get_port(), Direction, <<>>),
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), Direction, <<>>),
     case decode_rc(Rc) of
         ok ->
             receive

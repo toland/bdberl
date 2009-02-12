@@ -562,7 +562,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 
         // Inbuf is << DbRef:32, Flags:32 >>
         int dbref = UNPACK_INT(inbuf, 0);
-        int flags = UNPACK_INT(inbuf, 4);
+        unsigned int flags = UNPACK_INT(inbuf, 4);
 
         // Make sure we have a reference to the requested database
         if (has_dbref(d, dbref))
