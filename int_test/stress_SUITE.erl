@@ -20,7 +20,7 @@ all() ->
 
 init_per_suite(Config) ->
     {ok, Cwd} = file:get_cwd(),
-    {ok, _} = file:copy(lists:append([Cwd, "/../../../int_test/DB_CONFIG"]),
+    {ok, _} = file:copy(lists:append([Cwd, "/../../int_test/DB_CONFIG"]),
                         lists:append([Cwd, "/DB_CONFIG"])),
     crypto:start(),
     Config.
