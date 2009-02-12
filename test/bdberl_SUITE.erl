@@ -120,9 +120,9 @@ transaction_should_abort_on_user_abort(Config) ->
     {error, transaction_aborted} = bdberl:transaction(F),
     not_found = bdberl:get(Db, mykey).
 
-transaction_error_should_return_error(Config) ->
+transaction_error_should_return_error(_Config) ->
     {skip, waiting_on_bug_818}.
-%%     Db = ?config(db, Config),
+%%     Db = ?config(db, _Config),
 %%     F = fun() -> 
 %%                 bdberl:put(Db, mykey, should_not_see_this),
 %%                 %% Explicitly kill the transaction so that when transaction/2
