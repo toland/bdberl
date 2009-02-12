@@ -3,8 +3,7 @@
 *.beam
 *.tmproj
 c_src/system
-test/logs
+logs
 test/test.cover
-int_test/logs
 int_test/test.cover
 bdberl-*
