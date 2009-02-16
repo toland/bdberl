@@ -8,14 +8,14 @@
 
 -export([open/2, open/3,
          close/1, close/2,
-         txn_begin/0, txn_begin/1, 
+         txn_begin/0, txn_begin/1,
          txn_commit/0, txn_commit/1, txn_abort/0,
          get_cache_size/0, get_data_dirs/0,
          get_txn_timeout/0, set_txn_timeout/1,
          transaction/1, transaction/2,
          put/3, put/4,
          put_r/3, put_r/4,
-         put_commit/3, put_commit/4, 
+         put_commit/3, put_commit/4,
          put_commit_r/3, put_commit_r/4,
          get/2, get/3,
          get_r/2, get_r/3,
@@ -236,9 +236,9 @@ cursor_open(Db) ->
         Reason ->
             {error, Reason}
     end.
-            
 
-cursor_next() ->            
+
+cursor_next() ->
     do_cursor_move(?CMD_CURSOR_NEXT).
 
 cursor_prev() ->
@@ -257,7 +257,7 @@ cursor_close() ->
     end.
 
 delete_database(Filename) ->
-    Cmd = <<(list_to_binary(Filename))/binary, 0:8>>, 
+    Cmd = <<(list_to_binary(Filename))/binary, 0:8>>,
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
@@ -285,9 +285,9 @@ get_data_dirs() ->
             {error, Reason}
     end.
 
-get_cache_size() ->    
+get_cache_size() ->
     Cmd = <<?SYSP_CACHESIZE_GET:32/signed-native>>,
-    <<Result:32/signed-native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>> = 
+    <<Result:32/signed-native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>> =
         erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
     case Result of
         0 ->
@@ -296,7 +296,7 @@ get_cache_size() ->
             {error, Result}
     end.
 
-get_txn_timeout() ->    
+get_txn_timeout() ->
     Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/signed-native>>,
     <<Result:32/signed-native, Timeout:32/native>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
     case Result of
@@ -337,7 +337,7 @@ get_port() ->
         Port      -> Port
     end.
 
-%% 
+%%
 %% Decode a integer return value into an atom representation
 %%
 decode_rc(?ERROR_NONE)               -> ok;
@@ -350,7 +350,7 @@ decode_rc(?ERROR_NO_CURSOR)          -> no_cursor;
 decode_rc(?ERROR_DB_LOCK_NOTGRANTED) -> lock_not_granted;
 decode_rc(?ERROR_DB_LOCK_DEADLOCK)   -> deadlock;
 decode_rc(Rc)                        -> {unknown, Rc}.
-    
+
 %%
 %% Convert a term into a binary, returning a tuple with the binary and the length of the binary
 %%
@@ -421,12 +421,12 @@ do_put(Action, Db, Key, Value, Opts) ->
             {error, {put, decode_rc(Error)}}
     end.
 
-    
+
 
 %%
 %% Move the cursor in a given direction. Invoked by cursor_next/prev/current.
 %%
-do_cursor_move(Direction) ->            
+do_cursor_move(Direction) ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), Direction, <<>>),
     case decode_rc(Rc) of
         ok ->
