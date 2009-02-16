@@ -27,7 +27,7 @@ static int open_database(const char* name, DBTYPE type, unsigned int flags, Port
 static int close_database(int dbref, unsigned flags, PortData* data);
 static int delete_database(const char* name);
 
-static void tune_system(int target, void* values, BinHelper* bh);
+static void get_info(int target, void* values, BinHelper* bh);
 
 static void do_async_put(void* arg);
 static void do_async_get(void* arg);
@@ -539,7 +539,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             RETURN_INT(ERROR_INVALID_DBREF, outbuf);
         }
     }        
-    case CMD_TUNE:
+    case CMD_GETINFO:
     {
         // Inbuf is: << Target:32, Values/binary >>
         int target = UNPACK_INT(inbuf, 0);
@@ -548,7 +548,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Execute the tuning -- the result to send back to the caller is wrapped
         // up in the provided binhelper
         BinHelper bh;
-        tune_system(target, values, &bh);
+        get_info(target, values, &bh);
         RETURN_BH(bh, outbuf);
     }
     case CMD_CURSOR_OPEN:
@@ -851,9 +851,9 @@ static int delete_database(const char* name)
 }
 
 /**
- * Given a target system parameter/action adjust/return the requested value
+ * Given a target system parameter, return the requested value
  */
-static void tune_system(int target, void* values, BinHelper* bh)
+static void get_info(int target, void* values, BinHelper* bh)
 {
     switch(target) 
     {
@@ -868,14 +868,6 @@ static void tune_system(int target, void* values, BinHelper* bh)
         bin_helper_push_int32(bh, gbytes);
         bin_helper_push_int32(bh, bytes);
         bin_helper_push_int32(bh, caches);
-        break;
-    }
-    case SYSP_TXN_TIMEOUT_SET:
-    {
-        unsigned int timeout = UNPACK_INT(values, 0);
-        int rc = G_DB_ENV->set_timeout(G_DB_ENV, timeout, DB_SET_TXN_TIMEOUT);
-        bin_helper_init(bh);
-        bin_helper_push_int32(bh, rc);
         break;
     }
     case SYSP_TXN_TIMEOUT_GET:

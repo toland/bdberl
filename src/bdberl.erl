@@ -10,8 +10,9 @@
          close/1, close/2,
          txn_begin/0, txn_begin/1,
          txn_commit/0, txn_commit/1, txn_abort/0,
-         get_cache_size/0, get_data_dirs/0,
-         get_txn_timeout/0, set_txn_timeout/1,
+         get_cache_size/0,
+         get_data_dirs/0,
+         get_txn_timeout/0,
          transaction/1, transaction/2,
          put/3, put/4,
          put_r/3, put_r/4,
@@ -277,7 +278,7 @@ delete_database(Filename) ->
 get_data_dirs() ->
     %% Call into the BDB library and get a list of configured data directories
     Cmd = <<?SYSP_DATA_DIR_GET:32/signed-native>>,
-    <<Result:32/signed-native, Rest/bytes>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
+    <<Result:32/signed-native, Rest/bytes>> = erlang:port_control(get_port(), ?CMD_GETINFO, Cmd),
     case decode_rc(Result) of
         ok ->
             Dirs = [binary_to_list(D) || D <- split_bin(0, Rest, <<>>, [])],
@@ -295,7 +296,7 @@ get_data_dirs() ->
 get_cache_size() ->
     Cmd = <<?SYSP_CACHESIZE_GET:32/signed-native>>,
     <<Result:32/signed-native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>> =
-        erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
+        erlang:port_control(get_port(), ?CMD_GETINFO, Cmd),
     case Result of
         0 ->
             {ok, Gbytes, Bytes, Ncaches};
@@ -305,24 +306,13 @@ get_cache_size() ->
 
 get_txn_timeout() ->
     Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/signed-native>>,
-    <<Result:32/signed-native, Timeout:32/native>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
+    <<Result:32/signed-native, Timeout:32/native>> = erlang:port_control(get_port(), ?CMD_GETINFO, Cmd),
     case Result of
         0 ->
             {ok, Timeout};
         _ ->
             {error, Result}
     end.
-
-set_txn_timeout(Timeout) ->
-    Cmd = <<?SYSP_TXN_TIMEOUT_SET:32/signed-native, Timeout:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TUNE, Cmd),
-    case Result of
-        0 ->
-            ok;
-        _ ->
-            {error, Result}
-    end.
-
 
 
 %% ====================================================================

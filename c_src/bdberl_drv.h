@@ -36,7 +36,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define CMD_TXN_ABORT        5
 #define CMD_GET              6
 #define CMD_PUT              7
-#define CMD_TUNE             8
+#define CMD_GETINFO          8
 #define CMD_CURSOR_OPEN      9
 #define CMD_CURSOR_CURR     10
 #define CMD_CURSOR_NEXT     11
@@ -77,12 +77,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 
 
 /**
- * Tunable system parameters/actions
+ * System information ids
  */
 #define SYSP_CACHESIZE_GET               1
-#define SYSP_TXN_TIMEOUT_SET             2
-#define SYSP_TXN_TIMEOUT_GET             3
-#define SYSP_DATA_DIR_GET                4
+#define SYSP_TXN_TIMEOUT_GET             2
+#define SYSP_DATA_DIR_GET                3
 
 /** 
  * Driver Entry

@@ -24,7 +24,7 @@ all() ->
      transaction_error_should_return_error,
      update_should_save_value_if_successful,
      update_should_accept_args_for_fun,
-     port_should_tune_transaction_timeouts,
+     port_should_return_transaction_timeouts,
      cursor_should_iterate, cursor_should_fail_if_not_open,
      put_commit_should_end_txn,
      data_dir_should_be_priv_dir,
@@ -157,11 +157,9 @@ update_should_accept_args_for_fun(Config) ->
 
     {ok, newvalue} = bdberl:update(Db, mykey, F, look_at_me).
 
-port_should_tune_transaction_timeouts(_Config) ->
+port_should_return_transaction_timeouts(_Config) ->
     %% Test transaction timeouts
-    {ok, 500000} = bdberl:get_txn_timeout(),
-    ok = bdberl:set_txn_timeout(250000),
-    {ok, 250000} = bdberl:get_txn_timeout().
+    {ok, 500000} = bdberl:get_txn_timeout().
 
 cursor_should_iterate(Config) ->
     Db = ?config(db, Config),
