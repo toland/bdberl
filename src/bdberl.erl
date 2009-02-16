@@ -109,28 +109,35 @@ transaction(_Fun, 0) ->
     txn_abort(),
     {error, {transaction_failed, retry_limit_reached}};
 transaction(Fun, Retries) ->
-    txn_begin(),
-    try Fun() of
-        abort ->
-            txn_abort(),
-            {error, transaction_aborted};
+    case txn_begin() of
+        ok ->
+            try Fun() of
+                abort ->
+                    txn_abort(),
+                    {error, transaction_aborted};
 
-        Value ->
-            txn_commit(),
-            {ok, Value}
-    catch
-        throw : {error, {_Op, Error}} when ?is_lock_error(Error) ->
-            txn_abort(),
-            erlang:yield(),
-            R = case Retries of
-                    infinity -> infinity;
-                    Retries -> Retries - 1
-                end,
-            transaction(Fun, R);
+                Value ->
+                    case txn_commit() of
+                        ok -> {ok, Value};
+                        Error -> Error
+                    end
+            catch
+                throw : {error, {_Op, Error}} when ?is_lock_error(Error) ->
+                    txn_abort(),
+                    erlang:yield(),
+                    R = case Retries of
+                            infinity -> infinity;
+                            Retries -> Retries - 1
+                        end,
+                    transaction(Fun, R);
 
-        _ : Reason ->
-            txn_abort(),
-            {error, {transaction_failed, Reason}}
+                _ : Reason ->
+                    txn_abort(),
+                    {error, {transaction_failed, Reason}}
+            end;
+
+        Error ->
+            Error
     end.
 
 put(Db, Key, Value) ->
@@ -205,7 +212,7 @@ update(Db, Key, Fun, Args) ->
                            undefined -> Fun(Key, Value);
                            Args      -> Fun(Key, Value, Args)
                        end,
-            put_commit_r(Db, Key, NewValue),
+            put_r(Db, Key, NewValue),
             NewValue
         end,
     transaction(F).

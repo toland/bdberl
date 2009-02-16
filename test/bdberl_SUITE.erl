@@ -21,14 +21,14 @@ all() ->
      transaction_should_commit_on_success,
      transaction_should_abort_on_exception,
      transaction_should_abort_on_user_abort,
-     transaction_error_should_return_error, 
+     transaction_error_should_return_error,
      update_should_save_value_if_successful,
      update_should_accept_args_for_fun,
      port_should_tune_transaction_timeouts,
      cursor_should_iterate, cursor_should_fail_if_not_open,
      put_commit_should_end_txn,
      data_dir_should_be_priv_dir,
-     delete_should_remove_file, 
+     delete_should_remove_file,
      delete_should_fail_if_db_inuse,
      truncate_should_empty_database,
      truncate_all_should_empty_all_databases].
@@ -101,7 +101,7 @@ transaction_should_commit_on_success(Config) ->
 transaction_should_abort_on_exception(Config) ->
     Db = ?config(db, Config),
 
-    F = fun() -> 
+    F = fun() ->
             bdberl:put(Db, mykey, should_not_see_this),
             throw(testing)
         end,
@@ -112,7 +112,7 @@ transaction_should_abort_on_exception(Config) ->
 transaction_should_abort_on_user_abort(Config) ->
     Db = ?config(db, Config),
 
-    F = fun() -> 
+    F = fun() ->
             bdberl:put(Db, mykey, should_not_see_this),
             abort
         end,
@@ -121,18 +121,17 @@ transaction_should_abort_on_user_abort(Config) ->
     not_found = bdberl:get(Db, mykey).
 
 transaction_error_should_return_error(_Config) ->
-    {skip, waiting_on_bug_818}.
-%%     Db = ?config(db, _Config),
-%%     F = fun() -> 
-%%                 bdberl:put(Db, mykey, should_not_see_this),
-%%                 %% Explicitly kill the transaction so that when transaction/2
-%%                 %% tries to commit it will fail
-%%                 bdberl:txn_abort(),
-%%                 %% Value to return
-%%                 avalue
-%%         end,
-%%     %% This should fail as there is no transaction to commit
-%%     {error,{txn_commit,no_txn}} = bdberl:transaction(F).
+    Db = ?config(db, _Config),
+    F = fun() ->
+                bdberl:put(Db, mykey, should_not_see_this),
+                %% Explicitly kill the transaction so that when transaction/2
+                %% tries to commit it will fail
+                bdberl:txn_abort(),
+                %% Value to return
+                avalue
+        end,
+    %% This should fail as there is no transaction to commit
+    {error,{txn_commit,no_txn}} = bdberl:transaction(F).
 
 update_should_save_value_if_successful(Config) ->
     Db = ?config(db, Config),
@@ -166,12 +165,12 @@ port_should_tune_transaction_timeouts(_Config) ->
 
 cursor_should_iterate(Config) ->
     Db = ?config(db, Config),
-    
+
     %% Store some sample values in the db
     ok = bdberl:put(Db, key1, value1),
     ok = bdberl:put(Db, key2, value2),
     ok = bdberl:put(Db, key3, value3),
-    
+
     %% Validate that the cursor returns each value in order (ASSUME btree db)
     ok = bdberl:cursor_open(Db),
     {ok, key1, value1} = bdberl:cursor_next(),
@@ -186,7 +185,7 @@ cursor_should_iterate(Config) ->
     {ok, key2, value2} = bdberl:cursor_prev(),
     {ok, key1, value1} = bdberl:cursor_prev(),
     not_found = bdberl:cursor_prev(),
-    
+
     ok = bdberl:cursor_close().
 
 cursor_should_fail_if_not_open(_Config) ->
@@ -197,17 +196,17 @@ cursor_should_fail_if_not_open(_Config) ->
 
 put_commit_should_end_txn(Config) ->
     Db = ?config(db, Config),
-    
+
     %% Start a transaction
     ok = bdberl:txn_begin(),
     ok = bdberl:put_commit(Db, key1, value1),
-    
+
     %% Commit should now fail since the txn is done
     {error, {txn_commit, no_txn}} = bdberl:txn_commit(),
-    
+
     %% Verify data got committed
     {ok, value1} = bdberl:get(Db, key1).
-    
+
 data_dir_should_be_priv_dir(Config) ->
     PrivDir = ?config(priv_dir, Config),
     [PrivDir] = bdberl:get_data_dirs().
@@ -218,9 +217,9 @@ delete_should_remove_file(Config) ->
 
     Fname = filename:join([?config(priv_dir, Config), "mytest.bdb"]),
     true = filelib:is_file(Fname),
-    
+
     ok = bdberl:delete_database("mytest.bdb"),
-    
+
     false = filelib:is_file(Fname).
 
 delete_should_fail_if_db_inuse(Config) ->
