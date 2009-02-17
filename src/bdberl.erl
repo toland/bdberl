@@ -46,13 +46,15 @@
 -type db_update_fun() :: fun((db_key(), db_value(), any()) -> db_value()).
 
 
--spec open(Name :: nonempty_string(), Type :: db_type()) -> db().
+-spec open(Name :: nonempty_string(), Type :: db_type()) ->
+    {ok, db()} | {error, error()}.
 
 open(Name, Type) ->
     open(Name, Type, [create]).
 
 
--spec open(Name :: nonempty_string(), Type :: db_type(), Opts :: db_flags()) -> db().
+-spec open(Name :: nonempty_string(), Type :: db_type(), Opts :: db_flags()) ->
+    {ok, db()} | {error, error()}.
 
 open(Name, Type, Opts) ->
     %% Map database type into an integer code
@@ -359,19 +361,19 @@ cursor_open(Db) ->
     end.
 
 
--spec cursor_next() -> ok | {error, error()}.
+-spec cursor_next() -> {ok, db_key(), db_value()} | not_found | {error, error()}.
 
 cursor_next() ->
     do_cursor_move(?CMD_CURSOR_NEXT).
 
 
--spec cursor_prev() -> ok | {error, error()}.
+-spec cursor_prev() -> {ok, db_key(), db_value()} | not_found | {error, error()}.
 
 cursor_prev() ->
     do_cursor_move(?CMD_CURSOR_PREV).
 
 
--spec cursor_current() -> ok | {error, error()}.
+-spec cursor_current() -> {ok, db_key(), db_value()} | not_found | {error, error()}.
 
 cursor_current() ->
     do_cursor_move(?CMD_CURSOR_CURR).
