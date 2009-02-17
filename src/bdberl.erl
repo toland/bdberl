@@ -29,9 +29,30 @@
 
 -define(is_lock_error(Error), (Error =:= deadlock orelse Error =:= lock_not_granted)).
 
+-type db() :: non_neg_integer().
+-type db_type() :: btree | hash.
+-type db_flags() :: [atom()].
+-type db_key() :: term().
+-type db_value() :: term().
+-type db_ret_value() :: not_found | db_value().
+
+-type error_reason() :: term().
+-type error() :: {error, error_reason()}.
+
+-type txn_fun_ret() :: abort | term().
+-type txn_fun() :: fun(() -> txn_fun_ret()).
+-type txn_retries() :: infinity | non_neg_integer().
+
+-type db_update_fun() :: fun((db_key(), db_value(), any()) -> db_value()).
+
+
+-spec open(Name :: nonempty_string(), Type :: db_type()) -> db().
 
 open(Name, Type) ->
     open(Name, Type, [create]).
+
+
+-spec open(Name :: nonempty_string(), Type :: db_type(), Opts :: db_flags()) -> db().
 
 open(Name, Type, Opts) ->
     %% Map database type into an integer code
@@ -48,8 +69,14 @@ open(Name, Type, Opts) ->
             {error, Errno}
     end.
 
+
+-spec close(Db :: db()) -> ok | error().
+
 close(Db) ->
     close(Db, []).
+
+
+-spec close(Db :: db(), Opts :: db_flags()) -> ok | error().
 
 close(Db, Opts) ->
     Flags = process_flags(Opts),
@@ -62,8 +89,14 @@ close(Db, Opts) ->
             {error, Reason}
     end.
 
+
+-spec txn_begin() -> ok | error().
+
 txn_begin() ->
     txn_begin([]).
+
+
+-spec txn_begin(Opts :: db_flags()) -> ok | error().
 
 txn_begin(Opts) ->
     Flags = process_flags(Opts),
@@ -74,8 +107,14 @@ txn_begin(Opts) ->
         Error -> {error, {txn_begin, Error}}
     end.
 
+
+-spec txn_commit() -> ok | error().
+
 txn_commit() ->
     txn_commit([]).
+
+
+-spec txn_commit(Opts :: db_flags()) -> ok | error().
 
 txn_commit(Opts) ->
     Flags = process_flags(Opts),
@@ -91,6 +130,9 @@ txn_commit(Opts) ->
             {error, {txn_commit, Error}}
     end.
 
+
+-spec txn_abort() -> ok | error().
+
 txn_abort() ->
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_ABORT, <<>>),
     case decode_rc(Result) of
@@ -103,8 +145,15 @@ txn_abort() ->
             {error, {txn_abort, Error}}
     end.
 
+
+-spec transaction(Fun :: txn_fun()) -> {ok, db_value()} | {error, error()}.
+
 transaction(Fun) ->
     transaction(Fun, infinity).
+
+
+-spec transaction(Fun :: txn_fun(), Retries :: txn_retries()) ->
+    {ok, db_value()} | {error, error()}.
 
 transaction(_Fun, 0) ->
     txn_abort(),
@@ -141,14 +190,30 @@ transaction(Fun, Retries) ->
             Error
     end.
 
+
+-spec put(Db :: db(), Key :: db_key(), Value :: db_value()) ->
+    ok | {error, error()}.
+
 put(Db, Key, Value) ->
     put(Db, Key, Value, []).
+
+
+-spec put(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
+    ok | {error, error()}.
 
 put(Db, Key, Value, Opts) ->
     do_put(?CMD_PUT, Db, Key, Value, Opts).
 
+
+-spec put_r(Db :: db(), Key :: db_key(), Value :: db_value()) ->
+    ok | {error, error()}.
+
 put_r(Db, Key, Value) ->
     put_r(Db, Key, Value, []).
+
+
+-spec put_r(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
+    ok | {error, error()}.
 
 put_r(Db, Key, Value, Opts) ->
     case put(Db, Key, Value, Opts) of
@@ -156,14 +221,30 @@ put_r(Db, Key, Value, Opts) ->
         Error -> throw(Error)
     end.
 
+
+-spec put_commit(Db :: db(), Key :: db_key(), Value :: db_value()) ->
+    ok | {error, error()}.
+
 put_commit(Db, Key, Value) ->
     put_commit(Db, Key, Value, []).
+
+
+-spec put_commit(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
+    ok | {error, error()}.
 
 put_commit(Db, Key, Value, Opts) ->
     do_put(?CMD_PUT_COMMIT, Db, Key, Value, Opts).
 
+
+-spec put_commit_r(Db :: db(), Key :: db_key(), Value :: db_value()) ->
+    ok | {error, error()}.
+
 put_commit_r(Db, Key, Value) ->
     put_commit_r(Db, Key, Value, []).
+
+
+-spec put_commit_r(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
+    ok | {error, error()}.
 
 put_commit_r(Db, Key, Value, Opts) ->
     case do_put(?CMD_PUT_COMMIT, Db, Key, Value, Opts) of
@@ -171,8 +252,16 @@ put_commit_r(Db, Key, Value, Opts) ->
         Error -> throw(Error)
     end.
 
+
+-spec get(Db :: db(), Key :: db_key()) ->
+    {ok, db_ret_value()} | {error, error()}.
+
 get(Db, Key) ->
     get(Db, Key, []).
+
+
+-spec get(Db :: db(), Key :: db_key(), Opts :: db_flags()) ->
+    {ok, db_ret_value()} | {error, error()}.
 
 get(Db, Key, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
@@ -190,8 +279,15 @@ get(Db, Key, Opts) ->
             {error, {get, decode_rc(Error)}}
     end.
 
+-spec get_r(Db :: db(), Key :: db_key()) ->
+    {ok, db_ret_value()} | {error, error()}.
+
 get_r(Db, Key) ->
     get_r(Db, Key, []).
+
+
+-spec get_r(Db :: db(), Key :: db_key(), Opts :: db_flags()) ->
+    {ok, db_ret_value()} | {error, error()}.
 
 get_r(Db, Key, Opts) ->
     case get(Db, Key, Opts) of
@@ -200,8 +296,16 @@ get_r(Db, Key, Opts) ->
         Error       -> throw(Error)
     end.
 
+
+-spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun()) ->
+    {ok, db_value()} | {error, error()}.
+
 update(Db, Key, Fun) ->
     update(Db, Key, Fun, undefined).
+
+
+-spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: [any()]) ->
+    {ok, db_value()} | {error, error()}.
 
 update(Db, Key, Fun, Args) ->
     F = fun() ->
@@ -218,8 +322,14 @@ update(Db, Key, Fun, Args) ->
         end,
     transaction(F).
 
+
+-spec truncate() -> ok | {error, error()}.
+
 truncate() ->
     truncate(-1).
+
+
+-spec truncate(Db :: db()) -> ok | {error, error()}.
 
 truncate(Db) ->
     Cmd = <<Db:32/signed-native>>,
@@ -235,6 +345,9 @@ truncate(Db) ->
             {error, {truncate, decode_rc(Error)}}
     end.
 
+
+-spec cursor_open(Db :: db()) -> ok | {error, error()}.
+
 cursor_open(Db) ->
     Cmd = <<Db:32/signed-native, 0:32/native>>,
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_OPEN, Cmd),
@@ -246,14 +359,25 @@ cursor_open(Db) ->
     end.
 
 
+-spec cursor_next() -> ok | {error, error()}.
+
 cursor_next() ->
     do_cursor_move(?CMD_CURSOR_NEXT).
+
+
+-spec cursor_prev() -> ok | {error, error()}.
 
 cursor_prev() ->
     do_cursor_move(?CMD_CURSOR_PREV).
 
+
+-spec cursor_current() -> ok | {error, error()}.
+
 cursor_current() ->
     do_cursor_move(?CMD_CURSOR_CURR).
+
+
+-spec cursor_close() -> ok | {error, error()}.
 
 cursor_close() ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
@@ -263,6 +387,10 @@ cursor_close() ->
         Reason ->
             {error, Reason}
     end.
+
+
+-spec delete_database(Filename :: nonempty_string()) ->
+    ok | {error, error()}.
 
 delete_database(Filename) ->
     Cmd = <<(list_to_binary(Filename))/binary, 0:8>>,
@@ -274,6 +402,8 @@ delete_database(Filename) ->
             {error, Reason}
     end.
 
+
+-spec get_data_dirs() -> [nonempty_string(),...] | {error, error()}.
 
 get_data_dirs() ->
     %% Call into the BDB library and get a list of configured data directories
@@ -293,6 +423,10 @@ get_data_dirs() ->
             {error, Reason}
     end.
 
+
+-spec get_cache_size() ->
+    {ok, non_neg_integer(), non_neg_integer(), non_neg_integer()} | {error, error()}.
+
 get_cache_size() ->
     Cmd = <<?SYSP_CACHESIZE_GET:32/signed-native>>,
     <<Result:32/signed-native, Gbytes:32/native, Bytes:32/native, Ncaches:32/native>> =
@@ -303,6 +437,9 @@ get_cache_size() ->
         _ ->
             {error, Result}
     end.
+
+
+-spec get_txn_timeout() -> {ok, timeout()} | {error, error()}.
 
 get_txn_timeout() ->
     Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/signed-native>>,
