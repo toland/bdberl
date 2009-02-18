@@ -131,7 +131,7 @@ transaction_error_should_return_error(_Config) ->
                 avalue
         end,
     %% This should fail as there is no transaction to commit
-    {error,{txn_commit,no_txn}} = bdberl:transaction(F).
+    {error,no_txn} = bdberl:transaction(F).
 
 update_should_save_value_if_successful(Config) ->
     Db = ?config(db, Config),
@@ -200,7 +200,7 @@ put_commit_should_end_txn(Config) ->
     ok = bdberl:put_commit(Db, key1, value1),
 
     %% Commit should now fail since the txn is done
-    {error, {txn_commit, no_txn}} = bdberl:txn_commit(),
+    {error, no_txn} = bdberl:txn_commit(),
 
     %% Verify data got committed
     {ok, value1} = bdberl:get(Db, key1).

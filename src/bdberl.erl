@@ -29,35 +29,36 @@
 
 -define(is_lock_error(Error), (Error =:= deadlock orelse Error =:= lock_not_granted)).
 
--type db() :: non_neg_integer().
+-type db() :: integer().
+-type db_name() :: [byte(),...].
 -type db_type() :: btree | hash.
 -type db_flags() :: [atom()].
 -type db_key() :: term().
 -type db_value() :: term().
 -type db_ret_value() :: not_found | db_value().
 
--type error_reason() :: term().
--type error() :: {error, error_reason()}.
+-type db_error_reason() :: atom() | {unknown, integer()}.
+-type db_error() :: {error, db_error_reason()}.
 
--type txn_fun_ret() :: abort | term().
--type txn_fun() :: fun(() -> txn_fun_ret()).
+-type txn_fun() :: fun(() -> term()).
 -type txn_retries() :: infinity | non_neg_integer().
 
 -type db_update_fun() :: fun((db_key(), db_value(), any()) -> db_value()).
+-type db_update_fun_args() :: undefined | [term()].
 
 
--spec open(Name :: nonempty_string(), Type :: db_type()) ->
-    {ok, db()} | {error, error()}.
+-spec open(Name :: db_name(), Type :: db_type()) ->
+    {ok, db()} | {error, integer()}.
 
 open(Name, Type) ->
     open(Name, Type, [create]).
 
 
--spec open(Name :: nonempty_string(), Type :: db_type(), Opts :: db_flags()) ->
-    {ok, db()} | {error, error()}.
+-spec open(Name :: db_name(), Type :: db_type(), Opts :: db_flags()) ->
+    {ok, db()} | {error, integer()}.
 
 open(Name, Type, Opts) ->
-    %% Map database type into an integer code
+    % Map database type into an integer code
     case Type of
         btree -> TypeCode = ?DB_TYPE_BTREE;
         hash  -> TypeCode = ?DB_TYPE_HASH
@@ -72,13 +73,13 @@ open(Name, Type, Opts) ->
     end.
 
 
--spec close(Db :: db()) -> ok | error().
+-spec close(Db :: db()) -> ok | db_error().
 
 close(Db) ->
     close(Db, []).
 
 
--spec close(Db :: db(), Opts :: db_flags()) -> ok | error().
+-spec close(Db :: db(), Opts :: db_flags()) -> ok | db_error().
 
 close(Db, Opts) ->
     Flags = process_flags(Opts),
@@ -92,13 +93,13 @@ close(Db, Opts) ->
     end.
 
 
--spec txn_begin() -> ok | error().
+-spec txn_begin() -> ok | db_error().
 
 txn_begin() ->
     txn_begin([]).
 
 
--spec txn_begin(Opts :: db_flags()) -> ok | error().
+-spec txn_begin(Opts :: db_flags()) -> ok | db_error().
 
 txn_begin(Opts) ->
     Flags = process_flags(Opts),
@@ -106,17 +107,17 @@ txn_begin(Opts) ->
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
     case decode_rc(Result) of
         ok -> ok;
-        Error -> {error, {txn_begin, Error}}
+        Error -> {error, Error}
     end.
 
 
--spec txn_commit() -> ok | error().
+-spec txn_commit() -> ok | db_error().
 
 txn_commit() ->
     txn_commit([]).
 
 
--spec txn_commit(Opts :: db_flags()) -> ok | error().
+-spec txn_commit(Opts :: db_flags()) -> ok | db_error().
 
 txn_commit(Opts) ->
     Flags = process_flags(Opts),
@@ -126,14 +127,14 @@ txn_commit(Opts) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, {txn_commit, decode_rc(Reason)}}
+                {error, Reason} -> {error, decode_rc(Reason)}
             end;
         Error ->
-            {error, {txn_commit, Error}}
+            {error, Error}
     end.
 
 
--spec txn_abort() -> ok | error().
+-spec txn_abort() -> ok | db_error().
 
 txn_abort() ->
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_ABORT, <<>>),
@@ -141,31 +142,35 @@ txn_abort() ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, {txn_abort, decode_rc(Reason)}}
+                {error, Reason} -> {error, decode_rc(Reason)}
             end;
+
+        no_txn ->
+            ok;
+
         Error ->
-            {error, {txn_abort, Error}}
+            {error, Error}
     end.
 
 
--spec transaction(Fun :: txn_fun()) -> {ok, db_value()} | {error, error()}.
+-spec transaction(Fun :: txn_fun()) -> {ok, db_value()} | db_error().
 
 transaction(Fun) ->
     transaction(Fun, infinity).
 
 
 -spec transaction(Fun :: txn_fun(), Retries :: txn_retries()) ->
-    {ok, db_value()} | {error, error()}.
+    {ok, db_value()} | {error, db_error_reason() | {transaction_failed, term()}}.
 
 transaction(_Fun, 0) ->
-    txn_abort(),
+    ok = txn_abort(),
     {error, {transaction_failed, retry_limit_reached}};
 transaction(Fun, Retries) ->
     case txn_begin() of
         ok ->
             try Fun() of
                 abort ->
-                    txn_abort(),
+                    ok = txn_abort(),
                     {error, transaction_aborted};
 
                 Value ->
@@ -174,8 +179,8 @@ transaction(Fun, Retries) ->
                         Error -> Error
                     end
             catch
-                throw : {error, {_Op, Error}} when ?is_lock_error(Error) ->
-                    txn_abort(),
+                throw : {error, Error} when ?is_lock_error(Error) ->
+                    ok = txn_abort(),
                     erlang:yield(),
                     R = case Retries of
                             infinity -> infinity;
@@ -184,7 +189,7 @@ transaction(Fun, Retries) ->
                     transaction(Fun, R);
 
                 _ : Reason ->
-                    txn_abort(),
+                    ok = txn_abort(),
                     {error, {transaction_failed, Reason}}
             end;
 
@@ -194,59 +199,55 @@ transaction(Fun, Retries) ->
 
 
 -spec put(Db :: db(), Key :: db_key(), Value :: db_value()) ->
-    ok | {error, error()}.
+    ok | db_error().
 
 put(Db, Key, Value) ->
     put(Db, Key, Value, []).
 
 
 -spec put(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
-    ok | {error, error()}.
+    ok | db_error().
 
 put(Db, Key, Value, Opts) ->
     do_put(?CMD_PUT, Db, Key, Value, Opts).
 
 
--spec put_r(Db :: db(), Key :: db_key(), Value :: db_value()) ->
-    ok | {error, error()}.
+-spec put_r(Db :: db(), Key :: db_key(), Value :: db_value()) -> ok.
 
 put_r(Db, Key, Value) ->
     put_r(Db, Key, Value, []).
 
 
--spec put_r(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
-    ok | {error, error()}.
+-spec put_r(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) -> ok.
 
 put_r(Db, Key, Value, Opts) ->
-    case put(Db, Key, Value, Opts) of
+    case do_put(?CMD_PUT, Db, Key, Value, Opts) of
         ok -> ok;
         Error -> throw(Error)
     end.
 
 
 -spec put_commit(Db :: db(), Key :: db_key(), Value :: db_value()) ->
-    ok | {error, error()}.
+    ok | db_error().
 
 put_commit(Db, Key, Value) ->
     put_commit(Db, Key, Value, []).
 
 
 -spec put_commit(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
-    ok | {error, error()}.
+    ok | db_error().
 
 put_commit(Db, Key, Value, Opts) ->
     do_put(?CMD_PUT_COMMIT, Db, Key, Value, Opts).
 
 
--spec put_commit_r(Db :: db(), Key :: db_key(), Value :: db_value()) ->
-    ok | {error, error()}.
+-spec put_commit_r(Db :: db(), Key :: db_key(), Value :: db_value()) -> ok.
 
 put_commit_r(Db, Key, Value) ->
     put_commit_r(Db, Key, Value, []).
 
 
--spec put_commit_r(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) ->
-    ok | {error, error()}.
+-spec put_commit_r(Db :: db(), Key :: db_key(), Value :: db_value(), Opts :: db_flags()) -> ok.
 
 put_commit_r(Db, Key, Value, Opts) ->
     case do_put(?CMD_PUT_COMMIT, Db, Key, Value, Opts) of
@@ -256,14 +257,14 @@ put_commit_r(Db, Key, Value, Opts) ->
 
 
 -spec get(Db :: db(), Key :: db_key()) ->
-    {ok, db_ret_value()} | {error, error()}.
+    not_found | {ok, db_ret_value()} | db_error().
 
 get(Db, Key) ->
     get(Db, Key, []).
 
 
 -spec get(Db :: db(), Key :: db_key(), Opts :: db_flags()) ->
-    {ok, db_ret_value()} | {error, error()}.
+    not_found | {ok, db_ret_value()} | db_error().
 
 get(Db, Key, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
@@ -275,21 +276,22 @@ get(Db, Key, Opts) ->
             receive
                 {ok, _, Bin} -> {ok, binary_to_term(Bin)};
                 not_found -> not_found;
-                {error, Reason} -> {error, {get, decode_rc(Reason)}}
+                {error, Reason} -> {error, decode_rc(Reason)}
             end;
         Error ->
-            {error, {get, decode_rc(Error)}}
+            {error, Error}
     end.
 
+
 -spec get_r(Db :: db(), Key :: db_key()) ->
-    {ok, db_ret_value()} | {error, error()}.
+    not_found | {ok, db_ret_value()}.
 
 get_r(Db, Key) ->
     get_r(Db, Key, []).
 
 
 -spec get_r(Db :: db(), Key :: db_key(), Opts :: db_flags()) ->
-    {ok, db_ret_value()} | {error, error()}.
+    not_found | {ok, db_ret_value()}.
 
 get_r(Db, Key, Opts) ->
     case get(Db, Key, Opts) of
@@ -300,14 +302,14 @@ get_r(Db, Key, Opts) ->
 
 
 -spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun()) ->
-    {ok, db_value()} | {error, error()}.
+    {ok, db_value()} | db_error().
 
 update(Db, Key, Fun) ->
     update(Db, Key, Fun, undefined).
 
 
--spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: [any()]) ->
-    {ok, db_value()} | {error, error()}.
+-spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: db_update_fun_args()) ->
+    {ok, db_value()} | db_error().
 
 update(Db, Key, Fun, Args) ->
     F = fun() ->
@@ -325,13 +327,13 @@ update(Db, Key, Fun, Args) ->
     transaction(F).
 
 
--spec truncate() -> ok | {error, error()}.
+-spec truncate() -> ok | db_error().
 
 truncate() ->
     truncate(-1).
 
 
--spec truncate(Db :: db()) -> ok | {error, error()}.
+-spec truncate(Db :: -1 | db()) -> ok | db_error().
 
 truncate(Db) ->
     Cmd = <<Db:32/signed-native>>,
@@ -340,15 +342,15 @@ truncate(Db) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, {truncate, decode_rc(Reason)}}
+                {error, Reason} -> {error, decode_rc(Reason)}
             end;
 
         Error ->
-            {error, {truncate, decode_rc(Error)}}
+            {error, Error}
     end.
 
 
--spec cursor_open(Db :: db()) -> ok | {error, error()}.
+-spec cursor_open(Db :: db()) -> ok | db_error().
 
 cursor_open(Db) ->
     Cmd = <<Db:32/signed-native, 0:32/native>>,
@@ -361,25 +363,25 @@ cursor_open(Db) ->
     end.
 
 
--spec cursor_next() -> {ok, db_key(), db_value()} | not_found | {error, error()}.
+-spec cursor_next() -> {ok, db_key(), db_value()} | not_found | db_error().
 
 cursor_next() ->
     do_cursor_move(?CMD_CURSOR_NEXT).
 
 
--spec cursor_prev() -> {ok, db_key(), db_value()} | not_found | {error, error()}.
+-spec cursor_prev() -> {ok, db_key(), db_value()} | not_found | db_error().
 
 cursor_prev() ->
     do_cursor_move(?CMD_CURSOR_PREV).
 
 
--spec cursor_current() -> {ok, db_key(), db_value()} | not_found | {error, error()}.
+-spec cursor_current() -> {ok, db_key(), db_value()} | not_found | db_error().
 
 cursor_current() ->
     do_cursor_move(?CMD_CURSOR_CURR).
 
 
--spec cursor_close() -> ok | {error, error()}.
+-spec cursor_close() -> ok | db_error().
 
 cursor_close() ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
@@ -391,8 +393,8 @@ cursor_close() ->
     end.
 
 
--spec delete_database(Filename :: nonempty_string()) ->
-    ok | {error, error()}.
+-spec delete_database(Filename :: db_name()) ->
+    ok | db_error().
 
 delete_database(Filename) ->
     Cmd = <<(list_to_binary(Filename))/binary, 0:8>>,
@@ -405,29 +407,34 @@ delete_database(Filename) ->
     end.
 
 
--spec get_data_dirs() -> [nonempty_string(),...] | {error, error()}.
+-spec get_data_dirs() -> [db_name(),...] | db_error().
 
 get_data_dirs() ->
-    %% Call into the BDB library and get a list of configured data directories
+    % Call into the BDB library and get a list of configured data directories
     Cmd = <<?SYSP_DATA_DIR_GET:32/signed-native>>,
     <<Result:32/signed-native, Rest/bytes>> = erlang:port_control(get_port(), ?CMD_GETINFO, Cmd),
     case decode_rc(Result) of
         ok ->
             Dirs = [binary_to_list(D) || D <- split_bin(0, Rest, <<>>, [])],
-            %% Make sure DB_HOME is part of the list
-            case lists:member(os:getenv("DB_HOME"), Dirs) of
-                true ->
-                    Dirs;
+            case os:getenv("DB_HOME") of
                 false ->
-                    [os:getenv("DB_HOME") | Dirs]
+                    Dirs;
+
+                DbHome ->
+                    % Make sure DB_HOME is part of the list
+                    case lists:member(DbHome, Dirs) of
+                        true  -> Dirs;
+                        false -> [DbHome | Dirs]
+                    end
             end;
+
         Reason ->
             {error, Reason}
     end.
 
 
 -spec get_cache_size() ->
-    {ok, non_neg_integer(), non_neg_integer(), non_neg_integer()} | {error, error()}.
+    {ok, non_neg_integer(), non_neg_integer(), non_neg_integer()} | db_error().
 
 get_cache_size() ->
     Cmd = <<?SYSP_CACHESIZE_GET:32/signed-native>>,
@@ -437,11 +444,11 @@ get_cache_size() ->
         0 ->
             {ok, Gbytes, Bytes, Ncaches};
         _ ->
-            {error, Result}
+            {error, decode_rc(Result)}
     end.
 
 
--spec get_txn_timeout() -> {ok, timeout()} | {error, error()}.
+-spec get_txn_timeout() -> {ok, non_neg_integer()} | db_error().
 
 get_txn_timeout() ->
     Cmd = <<?SYSP_TXN_TIMEOUT_GET:32/signed-native>>,
@@ -450,7 +457,7 @@ get_txn_timeout() ->
         0 ->
             {ok, Timeout};
         _ ->
-            {error, Result}
+            {error, decode_rc(Result)}
     end.
 
 
@@ -485,7 +492,7 @@ decode_rc(?ERROR_CURSOR_OPEN)        -> cursor_open;
 decode_rc(?ERROR_NO_CURSOR)          -> no_cursor;
 decode_rc(?ERROR_DB_LOCK_NOTGRANTED) -> lock_not_granted;
 decode_rc(?ERROR_DB_LOCK_DEADLOCK)   -> deadlock;
-decode_rc(Rc)                        -> {unknown, Rc}.
+decode_rc(Rc) when is_integer(Rc)    -> {unknown, Rc}.
 
 %%
 %% Convert a term into a binary, returning a tuple with the binary and the length of the binary
@@ -551,10 +558,10 @@ do_put(Action, Db, Key, Value, Opts) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, {put, decode_rc(Reason)}}
+                {error, Reason} -> {error, decode_rc(Reason)}
             end;
         Error ->
-            {error, {put, decode_rc(Error)}}
+            {error, Error}
     end.
 
 

@@ -18,7 +18,7 @@ test_thrash(_Config) ->
     start_procs(?PROCS),
     wait_for_finish(?PROCS).
 
-start_procs(0) ->    
+start_procs(0) ->
     ok;
 start_procs(Count) ->
     spawn_link(?MODULE, thrash_run, [self()]),
@@ -50,7 +50,7 @@ thrash_incr_loop(Owner, Count) ->
     % ct:print("~p", [Count]),
     %% Choose random key
     Key = random:uniform(1200),
-    
+
     %% Start a txn that will read the current value of the key and increment by 1
     F = fun(_Key, Value) ->
             case Value of
