@@ -1,9 +1,9 @@
 *.o
 *.so
 *.beam
-*.tmproj
 c_src/system
 logs
+doc
 test/test.cover
 int_test/test.cover
 bdberl-*
