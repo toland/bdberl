@@ -73,6 +73,55 @@ open(Name, Type) ->
 %% @doc
 %% Open a database file.
 %%
+%% This function opens the database represented by the `Name' parameter
+%% for both reading and writing. The `Type' parameter specifies the
+%% database file format. The currently supported file formats (or access
+%% methods) are `btree' and `hash'. The `btree' format is a
+%% representation of a sorted, balanced tree structure. The `hash'
+%% format is an extensible, dynamic hashing scheme.
+%%
+%% Calling open is a relatively expensive operation, and maintaining a
+%% set of open databases will normally be preferable to repeatedly
+%% opening and closing the database for each new query.
+%%
+%% This function returns `{ok, Db}' on success. `Db' is a handle that
+%% must be used when performing operations on this database. If open
+%% fails, the close function is called automatically to discard the `Db'
+%% handle.
+%%
+%% === Options ===
+%%
+%% The `Opts' parameter takes a list of flags that will modify the
+%% behavior of bdberl when accessing this file. The following flags are
+%% recognized:
+%%
+%% <dl>
+%%   <dt>create</dt>
+%%   <dd>Create the database if it does not exist.</dd>
+%%   <dt>exclusive</dt>
+%%   <dd>Return an error if the database already exists. Only
+%%       meaningful when used with `create'.</dd>
+%%   <dt>multiversion</dt>
+%%   <dd>Open the database with support for multiversion concurrency
+%%       protocol.</dd>
+%%   <dt>no_mmap</dt>
+%%   <dd>Do not map this database into process memory.</dd>
+%%   <dt>readonly</dt>
+%%   <dd>Open the database for reading only. Any attempt to modify items
+%%       in the database will fail.</dd>
+%%   <dt>read_uncommitted</dt>
+%%   <dd>Support transactional read operations with degree 1
+%%       isolation. Read operations on the database may request the
+%%       return of modified but not yet committed data.</dd>
+%%   <dt>truncate</dt>
+%%   <dd>Physically truncate the underlying file, discarding all
+%%       previous databases it might have held.</dd>
+%% </dl>
+%%
+%% Additionally, the driver supports the `auto_commit' and `threaded'
+%% flags which are always enabled. Specifying either flag in `Opts' is
+%% safe, but does not alter the behavior of bdberl.
+%%
 %% @spec open(Name, Type, Opts) -> {ok, Db} | {error, Error}
 %% where
 %%    Name = string()
@@ -103,7 +152,7 @@ open(Name, Type, Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Close a database file.
+%% Close a database file with default options.
 %%
 %% @spec close(Db) -> ok | {error, Error}
 %% where
@@ -122,6 +171,30 @@ close(Db) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Close a database file.
+%%
+%% This function flushes any cached database information to disk, closes
+%% any open cursors, frees any allocated resources, and closes any
+%% underlying files.
+%%
+%% The `Db' handle should not be closed while any other handle that refers
+%% to it is not yet closed; for example, database handles must not be
+%% closed while cursor handles into the database remain open, or
+%% transactions that include operations on the database have not yet
+%% been committed or aborted.
+%%
+%% Because key/data pairs are cached in memory, failing to sync the file
+%% with the `close' function may result in inconsistent or lost
+%% information.
+%%
+%% The `Db' handle may not be accessed again after this function is
+%% called, regardless of its return.
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>no_sync</dt>
+%%   <dd>Do not flush cached information to disk.</dd>
+%% </dl>
 %%
 %% @spec close(Db, Opts) -> ok | {error, Error}
 %% where
@@ -146,7 +219,7 @@ close(Db, Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Begin a transaction.
+%% Begin a transaction with default options.
 %%
 %% @spec txn_begin() -> ok | {error, Error}
 %%
@@ -163,6 +236,80 @@ txn_begin() ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Begin a transaction.
+%%
+%% This function creates a new transaction in the environment. Calling
+%% the `abort' or `commit' functions will end the transaction.
+%%
+%% Transactions may only span threads if they do so serially; that is,
+%% each transaction must be active in only a single thread of control at
+%% a time. This restriction holds for parents of nested transactions as
+%% well; no two children may be concurrently active in more than one
+%% thread of control at any one time.
+%%
+%% Cursors may not span transactions; that is, each cursor must be
+%% opened and closed within a single transaction.
+%%
+%% A parent transaction may not issue any Berkeley DB operations --
+%% except for `txn_begin', `abort' and `commit' -- while it has active
+%% child transactions (child transactions that have not yet been
+%% committed or aborted).
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>read_committed</dt>
+%%   <dd>This transaction will have degree 2 isolation. This provides
+%%       for cursor stability but not repeatable reads. Data items which
+%%       have been previously read by this transaction may be deleted or
+%%       modified by other transactions before this transaction
+%%       completes.</dd>
+%%   <dt>read_uncommitted</dt>
+%%   <dd>This transaction will have degree 1 isolation. Read operations
+%%       performed by the transaction may read modified but not yet
+%%       committed data. Silently ignored if the `read_uncommitted'
+%%       option was not specified when the underlying database was
+%%       opened.</dd>
+%%   <dt>txn_no_sync</dt>
+%%   <dd>Do not synchronously flush the log when this transaction
+%%       commits. This means the transaction will exhibit the ACI
+%%       (atomicity, consistency, and isolation) properties, but not D
+%%       (durability); that is, database integrity will be maintained
+%%       but it is possible that this transaction may be undone during
+%%       recovery.</dd>
+%%   <dt>txn_no_wait</dt>
+%%   <dd>If a lock is unavailable for any Berkeley DB operation
+%%       performed in the context of this transaction, cause the
+%%       operation to return `deadlock' or `lock_not_granted'.</dd>
+%%   <dt>txn_snapshot</dt>
+%%   <dd>This transaction will execute with snapshot isolation. For
+%%       databases with the `multiversion' flag set, data values will be
+%%       read as they are when the transaction begins, without taking
+%%       read locks. Silently ignored for operations on databases with
+%%       `multiversion' not set on the underlying database (read locks
+%%       are acquired). The error `deadlock' will be returned from
+%%       update operations if a snapshot transaction attempts to update
+%%       data which was modified after the snapshot transaction read it.
+%%       </dd>
+%%    <dt>txn_sync</dt>
+%%    <dd>Synchronously flush the log when this transaction commits.
+%%        This means the transaction will exhibit all of the ACID
+%%        (atomicity, consistency, isolation, and durability)
+%%        properties. This behavior is the default.</dd>
+%%    <dt>txn_wait</dt>
+%%    <dd>If a lock is unavailable for any operation performed in the
+%%        context of this transaction, wait for the lock. This behavior
+%%        is the default.</dd>
+%%    <dt>txn_write_nosync</dt>
+%%    <dd>Write, but do not synchronously flush, the log when this
+%%        transaction commits. This means the transaction will exhibit
+%%        the ACI (atomicity, consistency, and isolation) properties,
+%%        but not D (durability); that is, database integrity will be
+%%        maintained, but if the system fails, it is possible some
+%%        number of the most recently committed transactions may be
+%%        undone during recovery. The number of transactions at risk is
+%%        governed by how often the system flushes dirty buffers to disk
+%%        and how often the log is flushed or checkpointed.</dd>
+%% </dl>
 %%
 %% @spec txn_begin(Opts) -> ok | {error, Error}
 %% where
@@ -184,7 +331,7 @@ txn_begin(Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Commit a transaction.
+%% Commit a transaction with default options.
 %%
 %% @spec txn_commit() -> ok | {error, Error}
 %%
@@ -201,6 +348,35 @@ txn_commit() ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Commit a transaction.
+%%
+%% This function ends the transaction. In the case of nested
+%% transactions, if the transaction is a parent transaction, committing
+%% the parent transaction causes all unresolved children of the parent
+%% to be committed. In the case of nested transactions, if the
+%% transaction is a child transaction, its locks are not released, but
+%% are acquired by its parent. Although the commit of the child
+%% transaction will succeed, the actual resolution of the child
+%% transaction is postponed until the parent transaction is committed or
+%% aborted; that is, if its parent transaction commits, it will be
+%% committed; and if its parent transaction aborts, it will be aborted.
+%%
+%% All cursors opened within the transaction must be closed before the
+%% transaction is committed.
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>txn_no_sync</dt>
+%%   <dd>Do not synchronously flush the log. This means the transaction
+%%       will exhibit the ACI (atomicity, consistency, and isolation)
+%%       properties, but not D (durability); that is, database integrity
+%%       will be maintained but it is possible that this transaction may
+%%       be undone during recovery.</dd>
+%%    <dt>txn_sync</dt>
+%%    <dd>Synchronously flush the log. This means the transaction will
+%%        exhibit all of the ACID (atomicity, consistency, isolation,
+%%        and durability) properties. This behavior is the default.</dd>
+%% </dl>
 %%
 %% @spec txn_commit(Opts) -> ok | {error, Error}
 %% where
@@ -228,6 +404,18 @@ txn_commit(Opts) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Abort a transaction.
+%%
+%% This function causes an abnormal termination of the transaction. The
+%% log is played backward, and any necessary undo operations are
+%% performed. Before this function returns, any locks held by the
+%% transaction will have been released.
+%%
+%% In the case of nested transactions, aborting a parent transaction
+%% causes all children (unresolved or not) of the parent transaction to
+%% be aborted.
+%%
+%% All cursors opened within the transaction must be closed before the
+%% transaction is aborted.
 %%
 %% @spec txn_abort() -> ok | {error, Error}
 %%
@@ -273,6 +461,16 @@ transaction(Fun) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Execute a fun inside of a transaction.
+%%
+%% This function executes a user-supplied function inside the scope of a
+%% transaction. If the function returns normally, then the transaction
+%% is committed and the value returned by the function is returned. If
+%% the function returns the value `abort' then the transaction will be
+%% aborted.
+%%
+%% If the transaction deadlocks on commit, the function will be executed
+%% again until the commit succeeds or the number of retries exceeds the
+%% value of the `Retries' parameter.
 %%
 %% @spec transaction(Fun, Retries) -> {ok, Value} | {error, Error}
 %% where
@@ -345,6 +543,32 @@ put(Db, Key, Value) ->
 %% @doc
 %% Store a value in a database file.
 %%
+%% This function stores key/data pairs in the database. The default
+%% behavior is to enter the new key/data pair, replacing any previously
+%% existing key if duplicates are disallowed, or adding a duplicate data
+%% item if duplicates are allowed. If the database supports duplicates,
+%% this function adds the new data value at the end of the duplicate
+%% set. If the database supports sorted duplicates, the new data value
+%% is inserted at the correct sorted location.
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>no_duplicate</dt>
+%%   <dd>enter the new key/data pair only if it does not already appear
+%%       in the database. This option may only be specified if the
+%%       underlying database has been configured to support sorted
+%%       duplicates. The `put' function will return `key_exist' if
+%%       this option is set and the key/data pair already appears in the
+%%       database.</dd>
+%%   <dt>no_overwrite</dt>
+%%   <dd>Enter the new key/data pair only if the key does not already
+%%       appear in the database. The `put' function call with this
+%%       option set will fail if the key already exists in the database,
+%%       even if the database supports duplicates. In this case the
+%%       `put' function will return `key_exist'.</dd>
+%% </dl>
+%%
 %% @spec put(Db, Key, Value, Opts) -> ok | {error, Error}
 %% where
 %%    Db = integer()
@@ -363,7 +587,7 @@ put(Db, Key, Value, Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Store a value in a database file.
+%% Store a value in a database file raising an exception on failure.
 %%
 %% @spec put_r(Db, Key, Value) -> ok
 %% where
@@ -385,7 +609,12 @@ put_r(Db, Key, Value) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Store a value in a database file.
+%% Store a value in a database file raising an exception on failure.
+%%
+%% This function is the same as put/4 except that it raises an exception
+%% on failure instead of returning an error tuple.
+%%
+%% @see put/4
 %%
 %% @spec put_r(Db, Key, Value, Opts) -> ok
 %% where
@@ -409,7 +638,7 @@ put_r(Db, Key, Value, Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Store a value in a database file.
+%% Store a value in a database file and commit the transaction.
 %%
 %% @spec put_commit(Db, Key, Value) -> ok | {error, Error}
 %% where
@@ -430,7 +659,11 @@ put_commit(Db, Key, Value) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Store a value in a database file.
+%% Store a value in a database file and commit the transaction.
+%%
+%% This function is logically the equicalent of calling `put' followed
+%% by `txn_commit' except that it is implemented with the driver and is
+%% therefore more efficient.
 %%
 %% @spec put_commit(Db, Key, Value, Opts) -> ok | {error, Error}
 %% where
@@ -450,7 +683,7 @@ put_commit(Db, Key, Value, Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Store a value in a database file.
+%% Store a value in a database file and commit the transaction.
 %%
 %% @spec put_commit_r(Db, Key, Value) -> ok
 %% where
@@ -472,7 +705,12 @@ put_commit_r(Db, Key, Value) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Store a value in a database file.
+%% Store a value in a database file and commit the transaction.
+%%
+%% This function is the same as put_commit/4 except that it raises an
+%% exception on failure instead of returning an error tuple.
+%%
+%% @see put_commit/4
 %%
 %% @spec put_commit_r(Db, Key, Value, Opts) -> ok
 %% where
@@ -517,6 +755,38 @@ get(Db, Key) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Retrieve a value based on key.
+%%
+%% This function retrieves key/data pairs from the database. In the
+%% presence of duplicate key values, this function will return the first
+%% data item for the designated key. Duplicates are sorted by insert
+%% order, except where this order has been overridden by cursor
+%% operations. Retrieval of duplicates requires the use of cursor
+%% operations.
+%%
+%% This function will return `not_found' if the specified key is not in
+%% the database.
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>read_committed</dt>
+%%   <dd>Configure a transactional get operation to have degree 2
+%%       isolation (the read is not repeatable).</dd>
+%%   <dt>read_uncommitted</dt>
+%%   <dd>Configure a transactional get operation to have degree 1
+%%       isolation, reading modified but not yet committed data.
+%%       Silently ignored if the `read_uncommitted' flag was not
+%%       specified when the underlying database was opened.</dd>
+%%   <dt>rmw</dt>
+%%   <dd>Acquire write locks instead of read locks when doing the read,
+%%       if locking is configured. Setting this flag can eliminate
+%%       deadlock during a read-modify-write cycle by acquiring the
+%%       write lock during the read part of the cycle so that another
+%%       thread of control acquiring a read lock for the same item, in
+%%       its own read-modify-write cycle, will not result in deadlock.
+%%       This option is meaningful only in the presence of transactions.
+%%       </dd>
+%% </dl>
 %%
 %% @spec get(Db, Key, Opts) -> not_found | {ok, Value} | {error, Error}
 %% where
@@ -572,6 +842,11 @@ get_r(Db, Key) ->
 %% @doc
 %% Retrieve a value based on key.
 %%
+%% This function is the same as get/3 except that it raises an
+%% exception on failure instead of returning an error tuple.
+%%
+%% @see get/3
+%%
 %% @spec get_r(Db, Key, Opts) -> not_found | {ok, Value}
 %% where
 %%    Db = integer()
@@ -618,6 +893,12 @@ update(Db, Key, Fun) ->
 %% @doc
 %% Updates the value of a key by executing a fun.
 %%
+%% This function updates a key/value pair by calling the provided
+%% function and passing in the key and value as they are
+%% currently. Additional arguments can be provided to the function by
+%% passing them in the `Args' parameter. The entire operation is
+%% executed within the scope of a new transaction.
+%%
 %% @spec update(Db, Key, Fun, Args) -> {ok, Value} | {error, Error}
 %% where
 %%    Db = integer()
@@ -650,6 +931,9 @@ update(Db, Key, Fun, Args) ->
 %% @doc
 %% Truncates all of the open databases.
 %%
+%% This function is equivalent to calling truncate/1 for every open
+%% database.
+%%
 %% @spec truncate() -> ok | {error, Error}
 %%
 %% @end
@@ -663,6 +947,11 @@ truncate() ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Truncates a database.
+%%
+%% This function empties the database, discarding all records it
+%% contains.
+%%
+%% It is an error to call this function on a database with open cursors.
 %%
 %% @spec truncate(Db) -> ok | {error, Error}
 %% where
@@ -691,7 +980,11 @@ truncate(Db) ->
 %% @doc
 %% Opens a cursor on a database.
 %%
-%% @spec cursor_open(Db) -> {ok, Db} | {error, Error}
+%% This function creates a database cursor. Cursors may span threads,
+%% but only serially, that is, the application must serialize access to
+%% the cursor handle.
+%%
+%% @spec cursor_open(Db) -> ok | {error, Error}
 %% where
 %%    Db = integer()
 %%
@@ -712,7 +1005,19 @@ cursor_open(Db) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns the next cursor value.
+%% Retrieves key/data pairs from the database.
+%%
+%% The cursor is moved to the next key/data pair of the database, and
+%% that pair is returned. In the presence of duplicate key values, the
+%% value of the key may not change.
+%%
+%% Modifications to the database during a sequential scan will be
+%% reflected in the scan; that is, records inserted behind a cursor will
+%% not be returned while records inserted in front of a cursor will be
+%% returned.
+%%
+%% If this function fails for any reason, the state of the cursor will
+%% be unchanged.
 %%
 %% @spec cursor_next() -> not_found | {ok, Key, Value} | {error, Error}
 %%
@@ -726,7 +1031,19 @@ cursor_next() ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns the previous cursor value.
+%% Retrieves key/data pairs from the database.
+%%
+%% The cursor is moved to the previous key/data pair of the database,
+%% and that pair is returned. In the presence of duplicate key values,
+%% the value of the key may not change.
+%%
+%% Modifications to the database during a sequential scan will be
+%% reflected in the scan; that is, records inserted behind a cursor will
+%% not be returned while records inserted in front of a cursor will be
+%% returned.
+%%
+%% If this function fails for any reason, the state of the cursor will
+%% be unchanged.
 %%
 %% @spec cursor_prev() -> not_found | {ok, Key, Value} | {error, Error}
 %%
@@ -740,7 +1057,17 @@ cursor_prev() ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns the current cursor value.
+%% Retrieves key/data pairs from the database.
+%%
+%% Returns the key/data pair to which the cursor refers.
+%%
+%% Modifications to the database during a sequential scan will be
+%% reflected in the scan; that is, records inserted behind a cursor will
+%% not be returned while records inserted in front of a cursor will be
+%% returned.
+%%
+%% If this function fails for any reason, the state of the cursor will
+%% be unchanged.
 %%
 %% @spec cursor_current() -> not_found | {ok, Key, Value} | {error, Error}
 %%
@@ -755,6 +1082,16 @@ cursor_current() ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Closes the cursor.
+%%
+%% This function discards the cursor.
+%%
+%% It is possible for this function to return `deadlock', signaling that
+%% any enclosing transaction should be aborted. If the application is
+%% already intending to abort the transaction, this error should be
+%% ignored, and the application should proceed.
+%%
+%% After this function has been called, regardless of its return, the
+%% cursor handle may not be used again.
 %%
 %% @spec cursor_close() -> ok | {error, Error}
 %%
@@ -775,6 +1112,15 @@ cursor_close() ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Delete a database file.
+%%
+%% This function removes the database specified by the filename
+%% parameter.
+%%
+%% Applications should never remove databases with open handles. For
+%% example, some architectures do not permit the removal of files with
+%% open system handles. On these architectures, attempts to remove
+%% databases currently in use by any thread of control in the system may
+%% fail.
 %%
 %% @spec delete_database(Filename) -> ok | {error, Error}
 %% where
@@ -835,6 +1181,9 @@ get_data_dirs() ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Returns the size of the in-memory cache.
+%%
+%% The cache size is returned as a three element tuple representing the
+%% number of gigabytes and megabytes and the number of caches.
 %%
 %% @spec get_cache_size() -> {ok, Gbytes, Mbytes, NumCaches} | {error, Error}
 %% where
