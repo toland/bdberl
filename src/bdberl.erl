@@ -1260,8 +1260,18 @@ decode_rc(?ERROR_TXN_OPEN)           -> transaction_open;
 decode_rc(?ERROR_NO_TXN)             -> no_txn;
 decode_rc(?ERROR_CURSOR_OPEN)        -> cursor_open;
 decode_rc(?ERROR_NO_CURSOR)          -> no_cursor;
-decode_rc(?ERROR_DB_LOCK_NOTGRANTED) -> lock_not_granted;
-decode_rc(?ERROR_DB_LOCK_DEADLOCK)   -> deadlock;
+decode_rc(?DB_BUFFER_SMALL)          -> buffer_small;
+decode_rc(?DB_KEYEMPTY)              -> key_empty;
+decode_rc(?DB_KEYEXIST)              -> key_exist;
+decode_rc(?DB_LOCK_DEADLOCK)         -> deadlock;
+decode_rc(?DB_LOCK_NOTGRANTED)       -> lock_not_granted;
+decode_rc(?DB_LOG_BUFFER_FULL)       -> log_buffer_full;
+decode_rc(?DB_NOTFOUND)              -> not_found;
+decode_rc(?DB_OLD_VERSION)           -> old_version;
+decode_rc(?DB_PAGE_NOTFOUND)         -> page_not_found;
+decode_rc(?DB_RUNRECOVERY)           -> run_recovery;
+decode_rc(?DB_VERIFY_BAD)            -> verify_bad;
+decode_rc(?DB_VERSION_MISMATCH)      -> version_mismatch;
 decode_rc(Rc) when is_integer(Rc)    -> {unknown, Rc}.
 
 %%
