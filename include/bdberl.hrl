@@ -44,35 +44,35 @@
 -define(ERROR_DB_ACTIVE,     -29007).           % Database is currently active; operation requires otherwise
 
 %% DB (user visible) error return codes.
--define(DB_BUFFER_SMALL           -30999).      % User memory too small for return
--define(DB_DONOTINDEX             -30998).      % "Null" return from 2ndary callbk
--define(DB_FOREIGN_CONFLICT       -30997).      % A foreign db constraint triggered
--define(DB_KEYEMPTY               -30996).      % Key/data deleted or never created
--define(DB_KEYEXIST               -30995).      % The key/data pair already exists
--define(DB_LOCK_DEADLOCK          -30994).      % Deadlock occurred
--define(DB_LOCK_NOTGRANTED        -30993).      % Lock unavailable
--define(DB_LOG_BUFFER_FULL        -30992).      % In-memory log buffer full
--define(DB_NOSERVER               -30991).      % Server panic return
--define(DB_NOSERVER_HOME          -30990).      % Bad home sent to server
--define(DB_NOSERVER_ID            -30989).      % Bad ID sent to server
--define(DB_NOTFOUND               -30988).      % Key/data pair not found (EOF)
--define(DB_OLD_VERSION            -30987).      % Out-of-date version
--define(DB_PAGE_NOTFOUND          -30986).      % Requested page not found
--define(DB_REP_DUPMASTER          -30985).      % There are two masters
--define(DB_REP_HANDLE_DEAD        -30984).      % Rolled back a commit
--define(DB_REP_HOLDELECTION       -30983).      % Time to hold an election
--define(DB_REP_IGNORE             -30982).      % This msg should be ignored
--define(DB_REP_ISPERM             -30981).      % Cached not written perm written
--define(DB_REP_JOIN_FAILURE       -30980).      % Unable to join replication group
--define(DB_REP_LEASE_EXPIRED      -30979).      % Master lease has expired
--define(DB_REP_LOCKOUT            -30978).      % API/Replication lockout now
--define(DB_REP_NEWSITE            -30977).      % New site entered system
--define(DB_REP_NOTPERM            -30976).      % Permanent log record not written
--define(DB_REP_UNAVAIL            -30975).      % Site cannot currently be reached
--define(DB_RUNRECOVERY            -30974).      % Panic return
--define(DB_SECONDARY_BAD          -30973).      % Secondary index corrupt
--define(DB_VERIFY_BAD             -30972).      % Verify failed; bad format
--define(DB_VERSION_MISMATCH       -30971).      % Environment version mismatch
+-define(DB_BUFFER_SMALL,           -30999).      % User memory too small for return
+-define(DB_DONOTINDEX,             -30998).      % "Null" return from 2ndary callbk
+-define(DB_FOREIGN_CONFLICT,       -30997).      % A foreign db constraint triggered
+-define(DB_KEYEMPTY,               -30996).      % Key/data deleted or never created
+-define(DB_KEYEXIST,               -30995).      % The key/data pair already exists
+-define(DB_LOCK_DEADLOCK,          -30994).      % Deadlock occurred
+-define(DB_LOCK_NOTGRANTED,        -30993).      % Lock unavailable
+-define(DB_LOG_BUFFER_FULL,        -30992).      % In-memory log buffer full
+-define(DB_NOSERVER,               -30991).      % Server panic return
+-define(DB_NOSERVER_HOME,          -30990).      % Bad home sent to server
+-define(DB_NOSERVER_ID,            -30989).      % Bad ID sent to server
+-define(DB_NOTFOUND,               -30988).      % Key/data pair not found (EOF)
+-define(DB_OLD_VERSION,            -30987).      % Out-of-date version
+-define(DB_PAGE_NOTFOUND,          -30986).      % Requested page not found
+-define(DB_REP_DUPMASTER,          -30985).      % There are two masters
+-define(DB_REP_HANDLE_DEAD,        -30984).      % Rolled back a commit
+-define(DB_REP_HOLDELECTION,       -30983).      % Time to hold an election
+-define(DB_REP_IGNORE,             -30982).      % This msg should be ignored
+-define(DB_REP_ISPERM,             -30981).      % Cached not written perm written
+-define(DB_REP_JOIN_FAILURE,       -30980).      % Unable to join replication group
+-define(DB_REP_LEASE_EXPIRED,      -30979).      % Master lease has expired
+-define(DB_REP_LOCKOUT,            -30978).      % API/Replication lockout now
+-define(DB_REP_NEWSITE,            -30977).      % New site entered system
+-define(DB_REP_NOTPERM,            -30976).      % Permanent log record not written
+-define(DB_REP_UNAVAIL,            -30975).      % Site cannot currently be reached
+-define(DB_RUNRECOVERY,            -30974).      % Panic return
+-define(DB_SECONDARY_BAD,          -30973).      % Secondary index corrupt
+-define(DB_VERIFY_BAD,             -30972).      % Verify failed; bad format
+-define(DB_VERSION_MISMATCH,       -30971).      % Environment version mismatch
 
 %% DB API flags
 -define(DB_AGGRESSIVE,               16#00000001).
