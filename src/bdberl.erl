@@ -230,7 +230,7 @@ close(Db, Opts) ->
 -spec txn_begin() -> ok | db_error().
 
 txn_begin() ->
-    txn_begin([]).
+    txn_begin([txn_snapshot]).
 
 
 %%--------------------------------------------------------------------
