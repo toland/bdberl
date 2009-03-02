@@ -97,8 +97,8 @@ static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100; /* Milliseconds between che
  */
 static ErlDrvTid    G_TRICKLE_THREAD     = 0;
 static unsigned int G_TRICKLE_ACTIVE     = 1;
-static unsigned int G_TRICKLE_INTERVAL   = 60 * 15; /* Seconds between trickle writes */
-static unsigned int G_TRICKLE_PERCENTAGE = 10;      /* Desired % of clean pages in cache */
+static unsigned int G_TRICKLE_INTERVAL   = 60 * 5;      /* Seconds between trickle writes */
+static unsigned int G_TRICKLE_PERCENTAGE = 50;          /* Desired % of clean pages in cache */
 
 
 /**
@@ -211,6 +211,28 @@ DRIVER_INIT(bdberl_drv)
             if (G_DATABASES_SIZE <= 0)
             {
                 G_DATABASES_SIZE = 1024;
+            }
+        }
+
+        // Use the BDBERL_TRICKLE_TIME and BDBERL_TRICKLE_PERCENTAGE to control how often
+        // the trickle writer runs and what percentage of pages should be flushed.
+        char* trickle_time_str = getenv("BDBERL_TRICKLE_TIME");
+        if (trickle_time_str != 0)
+        {
+            G_TRICKLE_INTERVAL = atoi(trickle_time_str);
+            if (G_TRICKLE_INTERVAL <= 0)
+            {
+                G_TRICKLE_INTERVAL = 60 * 5;
+            }
+        }
+
+        char* trickle_percentage_str = getenv("BDBERL_TRICKLE_PERCENTAGE");
+        if (trickle_percentage_str != 0)
+        {
+            G_TRICKLE_PERCENTAGE = atoi(trickle_percentage_str);
+            if (G_TRICKLE_PERCENTAGE <= 0)
+            {
+                G_TRICKLE_PERCENTAGE = 50;
             }
         }
 
