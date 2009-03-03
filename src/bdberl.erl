@@ -14,7 +14,7 @@
          get_cache_size/0,
          get_data_dirs/0,
          get_txn_timeout/0,
-         transaction/1, transaction/2,
+         transaction/1, transaction/2, transaction/3,
          put/3, put/4,
          put_r/3, put_r/4,
          put_commit/3, put_commit/4,
@@ -448,14 +448,34 @@ txn_abort() ->
 %% where
 %%    Fun = function()
 %%
-%% @equiv transaction(Fun, infinity)
-%% @see transaction/2
+%% @equiv transaction(Fun, infinity, [])
+%% @see transaction/3
 %% @end
 %%--------------------------------------------------------------------
 -spec transaction(Fun :: txn_fun()) -> {ok, db_value()} | db_error().
 
 transaction(Fun) ->
     transaction(Fun, infinity).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Execute a fun inside of a transaction.
+%%
+%% @spec transaction(Fun, Retries) -> {ok, Value} | {error, Error}
+%% where
+%%    Fun = function()
+%%    Retries = infinity | integer()
+%%
+%% @equiv transaction(Fun, Retries, [])
+%% @see transaction/3
+%% @end
+%%--------------------------------------------------------------------
+-spec transaction(Fun :: txn_fun(), Retries :: txn_retries()) ->
+    {ok, db_value()} | {error, db_error_reason() | {transaction_failed, term()}}.
+
+transaction(Fun, Retries) ->
+    transaction(Fun, Retries, []).
 
 
 %%--------------------------------------------------------------------
@@ -472,21 +492,24 @@ transaction(Fun) ->
 %% again until the commit succeeds or the number of retries exceeds the
 %% value of the `Retries' parameter.
 %%
-%% @spec transaction(Fun, Retries) -> {ok, Value} | {error, Error}
+%% The 'Opts' parameter is used to set flags for the call to txn_begin/1.
+%%
+%% @spec transaction(Fun, Retries, Opts) -> {ok, Value} | {error, Error}
 %% where
 %%    Fun = function()
 %%    Retries = infinity | integer()
+%%    Opts = [atom()]
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec transaction(Fun :: txn_fun(), Retries :: txn_retries()) ->
+-spec transaction(Fun :: txn_fun(), Retries :: txn_retries(), Opts :: db_flags()) ->
     {ok, db_value()} | {error, db_error_reason() | {transaction_failed, term()}}.
 
-transaction(_Fun, 0) ->
+transaction(_Fun, 0, _Opts) ->
     ok = txn_abort(),
     {error, {transaction_failed, retry_limit_reached}};
-transaction(Fun, Retries) ->
-    case txn_begin() of
+transaction(Fun, Retries, Opts) ->
+    case txn_begin(Opts) of
         ok ->
             try Fun() of
                 abort ->
