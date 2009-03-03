@@ -21,7 +21,7 @@
          put_commit_r/3, put_commit_r/4,
          get/2, get/3,
          get_r/2, get_r/3,
-         update/3, update/4,
+         update/3, update/4, update/5,
          truncate/0, truncate/1,
          delete_database/1,
          cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0]).
@@ -901,15 +901,37 @@ get_r(Db, Key, Opts) ->
 %%    Key = term()
 %%    Fun = function()
 %%
-%% @equiv update(Db, Key, Fun, undefined)
-%% @see update/4
+%% @equiv update(Db, Key, Fun, undefined, [])
+%% @see update/5
 %% @end
 %%--------------------------------------------------------------------
 -spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun()) ->
     {ok, db_value()} | db_error().
 
 update(Db, Key, Fun) ->
-    update(Db, Key, Fun, undefined).
+    update(Db, Key, Fun, undefined, []).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Updates the value of a key by executing a fun.
+%%
+%% @spec update(Db, Key, Fun, Args) -> {ok, Value} | {error, Error}
+%% where
+%%    Db = integer()
+%%    Key = term()
+%%    Fun = function()
+%%    Args = any()
+%%
+%% @equiv update(Db, Key, Fun, undefined, [])
+%% @see update/5
+%% @end
+%%--------------------------------------------------------------------
+-spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: db_update_fun_args()) ->
+    {ok, db_value()} | db_error().
+
+update(Db, Key, Fun, Args) ->
+    update(Db, Key, Fun, Args, []).
 
 
 %%--------------------------------------------------------------------
@@ -922,19 +944,22 @@ update(Db, Key, Fun) ->
 %% passing them in the `Args' parameter. The entire operation is
 %% executed within the scope of a new transaction.
 %%
-%% @spec update(Db, Key, Fun, Args) -> {ok, Value} | {error, Error}
+%% The 'Opts' parameter is used to pass flags to transaction/3.
+%%
+%% @spec update(Db, Key, Fun, Args, Opts) -> {ok, Value} | {error, Error}
 %% where
 %%    Db = integer()
 %%    Key = term()
 %%    Fun = function()
 %%    Args = any()
+%%    Opts = [atom()]
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: db_update_fun_args()) ->
+-spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: db_update_fun_args(), Opts :: db_flags) ->
     {ok, db_value()} | db_error().
 
-update(Db, Key, Fun, Args) ->
+update(Db, Key, Fun, Args, Opts) ->
     F = fun() ->
             Value = case get_r(Db, Key, [rmw]) of
                         not_found -> not_found;
@@ -947,7 +972,7 @@ update(Db, Key, Fun, Args) ->
             put_r(Db, Key, NewValue),
             NewValue
         end,
-    transaction(F).
+    transaction(F, infinity, Opts).
 
 
 %%--------------------------------------------------------------------
