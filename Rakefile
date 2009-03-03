@@ -21,3 +21,12 @@ task :package do
   Dir.mkdir "#{target_dir}/priv/bin"
   FileUtils.cp_r Dir.glob('c_src/system/bin/*'), "#{target_dir}/priv/bin", :verbose => false
 end
+
+task :dialyzer do
+  sh "dialyzer -Iinclude -c ebin/bdberl.beam\
+               -Werror_handling\
+               -Wunmatched_returns\
+               -Wunderspecs\
+               -Woverspecs\
+               -Wspecdiffs | tee dialyzer.log"
+end
