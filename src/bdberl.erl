@@ -41,8 +41,9 @@
 -type db_error_reason() :: atom() | {unknown, integer()}.
 -type db_error() :: {error, db_error_reason()}.
 
--type txn_fun() :: fun(() -> term()).
--type txn_retries() :: infinity | non_neg_integer().
+-type db_txn_fun() :: fun(() -> term()).
+-type db_txn_retries() :: infinity | non_neg_integer().
+-type db_txn_error() :: {error, db_error_reason() | {transaction_failed, _}}.
 
 -type db_update_fun() :: fun((db_key(), db_value(), any()) -> db_value()).
 -type db_update_fun_args() :: undefined | [term()].
@@ -452,7 +453,7 @@ txn_abort() ->
 %% @see transaction/3
 %% @end
 %%--------------------------------------------------------------------
--spec transaction(Fun :: txn_fun()) -> {ok, db_value()} | db_error().
+-spec transaction(Fun :: db_txn_fun()) -> {ok, db_value()} | db_txn_error().
 
 transaction(Fun) ->
     transaction(Fun, infinity).
@@ -471,8 +472,8 @@ transaction(Fun) ->
 %% @see transaction/3
 %% @end
 %%--------------------------------------------------------------------
--spec transaction(Fun :: txn_fun(), Retries :: txn_retries()) ->
-    {ok, db_value()} | {error, db_error_reason() | {transaction_failed, term()}}.
+-spec transaction(Fun :: db_txn_fun(), Retries :: db_txn_retries()) ->
+    {ok, db_value()} | db_txn_error().
 
 transaction(Fun, Retries) ->
     transaction(Fun, Retries, []).
@@ -502,8 +503,8 @@ transaction(Fun, Retries) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec transaction(Fun :: txn_fun(), Retries :: txn_retries(), Opts :: db_flags()) ->
-    {ok, db_value()} | {error, db_error_reason() | {transaction_failed, term()}}.
+-spec transaction(Fun :: db_txn_fun(), Retries :: db_txn_retries(), Opts :: db_flags()) ->
+    {ok, db_value()} | db_txn_error().
 
 transaction(_Fun, 0, _Opts) ->
     ok = txn_abort(),
@@ -906,7 +907,7 @@ get_r(Db, Key, Opts) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun()) ->
-    {ok, db_value()} | db_error().
+    {ok, db_value()} | db_txn_error().
 
 update(Db, Key, Fun) ->
     update(Db, Key, Fun, undefined, []).
@@ -928,7 +929,7 @@ update(Db, Key, Fun) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: db_update_fun_args()) ->
-    {ok, db_value()} | db_error().
+    {ok, db_value()} | db_txn_error().
 
 update(Db, Key, Fun, Args) ->
     update(Db, Key, Fun, Args, []).
@@ -956,8 +957,8 @@ update(Db, Key, Fun, Args) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: db_update_fun_args(), Opts :: db_flags) ->
-    {ok, db_value()} | db_error().
+-spec update(Db :: db(), Key :: db_key(), Fun :: db_update_fun(), Args :: db_update_fun_args(), Opts :: db_flags()) ->
+    {ok, db_value()} | db_txn_error().
 
 update(Db, Key, Fun, Args, Opts) ->
     F = fun() ->
@@ -1200,7 +1201,7 @@ delete_database(Filename) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec get_data_dirs() -> [db_name(),...] | db_error().
+-spec get_data_dirs() -> [string()] | db_error().
 
 get_data_dirs() ->
     % Call into the BDB library and get a list of configured data directories
