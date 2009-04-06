@@ -16,17 +16,7 @@ end
 # dependency chain early enough
 file 'c_src/bdberl_drv.c' => [DB_LIB]
 
-task :package do
-  target_dir = package_dir
-  Dir.mkdir "#{target_dir}/priv/bin"
-  FileUtils.cp_r Dir.glob('c_src/system/bin/*'), "#{target_dir}/priv/bin", :verbose => false
-end
-
-task :dialyzer do
-  sh "dialyzer -Iinclude -c ebin/bdberl.beam\
-               -Werror_handling\
-               -Wunmatched_returns\
-               -Wunderspecs\
-               -Woverspecs\
-               -Wspecdiffs | tee dialyzer.log"
+task 'faxien:package' do
+  Dir.mkdir "#{PACKAGE_DIR}/priv/bin"
+  FileUtils.cp_r Dir.glob('c_src/system/bin/*'), "#{PACKAGE_DIR}/priv/bin", :verbose => false
 end
