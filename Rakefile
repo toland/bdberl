@@ -8,6 +8,9 @@ INT_TEST_FLAGS << '+A10'
 
 DB_LIB = "c_src/system/lib/libdb.a"
 
+CC_FLAGS << "-Ic_src/system/include"
+LD_FLAGS << DB_LIB
+
 file DB_LIB do
   sh "cd c_src && ./buildlib.sh 2>&1"
 end
