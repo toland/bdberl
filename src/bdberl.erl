@@ -24,7 +24,8 @@
          update/3, update/4, update/5,
          truncate/0, truncate/1,
          delete_database/1,
-         cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0]).
+         cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0,
+         register_logger/0]).
 
 -include("bdberl.hrl").
 
@@ -1280,6 +1281,23 @@ get_txn_timeout() ->
     end.
 
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Registers the port owner pid to receive any BDB err/msg events. Note
+%% that this is global registration -- ALL BDB err/msg events for this
+%% VM instance will be routed to the pid.
+%%
+%% @spec register_logger() -> ok
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec register_logger() -> ok.
+
+register_logger() ->
+    [] = erlang:port_control(get_port(), ?CMD_REGISTER_LOGGER, <<>>),
+    ok.
+
+
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
@@ -1289,6 +1307,17 @@ init() ->
         ok -> ok;
         {error, permanent} -> ok               % Means that the driver is already active
     end,
+
+    %% Look for logging process -- make sure it's running and/or registered
+    case whereis(bdberl_logger) of
+        undefined ->
+            C = {bdberl_logger, {bdberl_logger, start_link, []}, permanent, 1000,
+                 worker, [bdberl_logger]},
+            supervisor:start_child(kernel_safe_sup, C);
+        _ ->
+            ok
+    end,
+    
     Port = open_port({spawn, bdberl_drv}, [binary]),
     erlang:put(bdb_port, Port),
     Port.
