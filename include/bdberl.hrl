@@ -22,6 +22,7 @@
 -define(CMD_PUT_COMMIT,   14).
 -define(CMD_REMOVE_DB,    15).
 -define(CMD_TRUNCATE,     16).
+-define(CMD_REGISTER_LOGGER, 17).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).
