@@ -45,7 +45,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define CMD_PUT_COMMIT      14
 #define CMD_REMOVE_DB       15
 #define CMD_TRUNCATE        16
-
+#define CMD_REGISTER_LOGGER 17
 
 /**
  * Command status values

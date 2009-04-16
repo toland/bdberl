@@ -50,6 +50,9 @@ static void* deadlock_check(void* arg);
 static void* trickle_write(void* arg);
 static void* txn_checkpoint(void* arg);
 
+static void bdb_errcall(const DB_ENV* dbenv, const char* errpfx, const char* msg);
+static void bdb_msgcall(const DB_ENV* dbenv, const char* msg);
+
 /**
  * Global instance of DB_ENV; only a single one exists per O/S process.
  */
@@ -116,6 +119,15 @@ static unsigned int G_CHECKPOINT_INTERVAL = 60 * 60; /* Seconds between checkpoi
  * shutdown, the driver closes the write fd and waits for the threads to be joined.
  */
 static int G_BDBERL_PIPE[2] = {-1, -1};
+
+/**
+ * Lock, port and pid reference for relaying BDB output into the SASL logger. READ lock
+ * is required to log data. WRITE lock is used when replacing the pid/port reference. If
+ * no pid/port is available, no callback is registered with BDB. 
+ */
+static ErlDrvRWLock*  G_LOG_RWLOCK = 0;
+static ErlDrvTermData G_LOG_PID;
+static ErlDrvPort     G_LOG_PORT;
 
 /**
  *
@@ -277,6 +289,11 @@ DRIVER_INIT(bdberl_drv)
         // TODO: Make configurable/adjustable
         G_TPOOL_GENERAL = bdberl_tpool_start(10);
         G_TPOOL_TXNS    = bdberl_tpool_start(10);
+
+        // Initialize logging lock and refs
+        G_LOG_RWLOCK = erl_drv_rwlock_create("bdberl_drv: G_LOG_RWLOCK");
+        G_LOG_PORT   = 0;
+        G_LOG_PID    = 0;
     }
 
     return &bdberl_drv_entry;
@@ -358,6 +375,24 @@ static void bdberl_drv_stop(ErlDrvData handle)
         close_database(d->dbrefs->dbref, 0, d);
     }
 
+    // If this port was registered as the endpoint for logging, go ahead and 
+    // remove it. Note that we don't need to lock to check this since we only
+    // unregister if it's already initialized to this port.
+    if (G_LOG_PORT == d->port)
+    {
+        WRITE_LOCK(G_LOG_RWLOCK);
+
+        // Remove the references
+        G_LOG_PORT = 0;
+        G_LOG_PID  = 0;
+        
+        // Unregister with BDB -- MUST DO THIS WITH WRITE LOCK HELD!
+        G_DB_ENV->set_msgcall(G_DB_ENV, 0);
+        G_DB_ENV->set_errcall(G_DB_ENV, 0);
+
+        WRITE_UNLOCK(G_LOG_RWLOCK);
+    }
+
     DBG("Stopped port: %p\r\n", d->port);
     
     // Release the port instance data
@@ -399,6 +434,9 @@ static void bdberl_drv_finish()
     driver_free(G_DATABASES);
     erl_drv_rwlock_destroy(G_DATABASES_RWLOCK);
     hive_hash_destroy(G_DATABASES_NAMES);
+
+    // Release the logging rwlock
+    erl_drv_rwlock_destroy(G_LOG_RWLOCK);
 
     DBG("DRIVER_FINISH\n");
 }
@@ -691,6 +729,25 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         {
             // Invalid dbref
             RETURN_INT(ERROR_INVALID_DBREF, outbuf);
+        }
+    }
+    case CMD_REGISTER_LOGGER:
+    {
+        // If this port is not the current logger, make it so. Only one logger can be registered
+        // at a time. 
+        if (G_LOG_PORT != d->port)
+        {
+            // Grab the write lock and update the global vars; also make sure to update BDB callbacks
+            // within the write lock to avoid race conditions.
+            WRITE_LOCK(G_LOG_RWLOCK);
+            
+            G_LOG_PORT = d->port;
+            G_LOG_PID  = driver_connected(d->port);
+
+            G_DB_ENV->set_msgcall(G_DB_ENV, &bdb_msgcall);
+            G_DB_ENV->set_errcall(G_DB_ENV, &bdb_errcall);
+
+            WRITE_UNLOCK(G_LOG_RWLOCK);
         }
     }
     }
@@ -1531,4 +1588,31 @@ static void* txn_checkpoint(void* arg)
 
     DBG("Checkpointer exiting.\r\n");
     return 0;
+}
+
+static void bdb_errcall(const DB_ENV* dbenv, const char* errpfx, const char* msg)
+{
+    READ_LOCK(G_LOG_RWLOCK);
+    if (G_LOG_PORT)
+    {
+        ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("bdb_error_log"),
+                                      ERL_DRV_STRING, (ErlDrvTermData)msg, (ErlDrvUInt)strlen(msg),
+                                      ERL_DRV_TUPLE, 2};
+        driver_send_term(G_LOG_PORT, G_LOG_PID, response, sizeof(response) / sizeof(response[0]));
+    }
+    READ_UNLOCK(G_LOG_RWLOCK);
+}
+
+static void bdb_msgcall(const DB_ENV* dbenv, const char* msg)
+{
+    printf("msgcall: %s\n", msg);
+    READ_LOCK(G_LOG_RWLOCK);
+    if (G_LOG_PORT)
+    {
+        ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("bdb_info_log"),
+                                      ERL_DRV_STRING, (ErlDrvTermData)msg, (ErlDrvUInt)strlen(msg),
+                                      ERL_DRV_TUPLE, 2};
+        driver_send_term(G_LOG_PORT, G_LOG_PID, response, sizeof(response) / sizeof(response[0]));
+    }
+    READ_UNLOCK(G_LOG_RWLOCK);
 }
