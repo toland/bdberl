@@ -1,0 +1,133 @@
+--- dbinc/mp.h.orig	2006-09-07 14:31:58.000000000 -0700
++++ dbinc/mp.h	2007-01-06 19:14:56.000000000 -0800
+@@ -378,6 +378,23 @@
+ #define	BH_FREE_REUSE		0x02
+ #define	BH_FREE_UNLOCKED	0x04
+ 
++#ifdef DIAG_MVCC
++#define	BH_ALIGNED
++#define VM_PAGESIZE 4096
++#endif
++
++/* Linux O_DIRECT needs aligned buffers. 2.6 kernel allows 512 byte
++ * alignment, otherwise need page sized (4096).
++ */
++#if defined(linux) && !defined(BH_ALIGNED)
++#define	BH_ALIGNED
++#ifdef LINUX_NEEDS_PAGE_ALIGNMENT
++#define VM_PAGESIZE 4096
++#else	/* Linux 2.6+ */
++#define VM_PAGESIZE 512
++#endif
++#endif
++
+ /*
+  * BH --
+  *	Buffer header.
+@@ -404,7 +421,7 @@
+ 
+ 	roff_t		td_off;		/* MVCC: creating TXN_DETAIL offset. */
+ 	SH_CHAIN_ENTRY	vc;		/* MVCC: version chain. */
+-#ifdef DIAG_MVCC
++#ifdef BH_ALIGNED
+ 	u_int16_t	align_off;	/* Alignment offset for diagnostics.*/
+ #endif
+ 
+@@ -465,15 +482,14 @@
+     (dbc->txn != NULL && F_ISSET(dbc->txn, TXN_SNAPSHOT) &&		\
+     dbc->txn->td != NULL && __memp_skip_curadj(dbc, pgno))
+ 
+-#if defined(DIAG_MVCC) && defined(HAVE_MPROTECT)
+-#define	VM_PAGESIZE 4096
+-#define	MVCC_BHSIZE(mfp, sz) do {					\
++#ifdef BH_ALIGNED
++#define	BHSIZE(mfp, sz) do {					\
+ 	sz += VM_PAGESIZE + sizeof(BH);					\
+ 	if (mfp->stat.st_pagesize < VM_PAGESIZE)			\
+ 		sz += VM_PAGESIZE - mfp->stat.st_pagesize;		\
+ } while (0)
+ 
+-#define	MVCC_BHALIGN(mfp, p) do {					\
++#define	BHALIGN(mfp, p) do {					\
+ 	if (mfp != NULL) {						\
+ 		BH *__bhp;						\
+ 		void *__orig = (p);					\
+@@ -493,13 +509,19 @@
+ 	}								\
+ } while (0)
+ 
+-#define	MVCC_BHUNALIGN(mfp, p) do {					\
++#define	BHUNALIGN(mfp, p) do {					\
+ 	if ((mfp) != NULL) {						\
+ 		BH *bhp = (BH *)(p);					\
+ 		(p) = ((u_int8_t *)bhp - bhp->align_off);		\
+ 	}								\
+ } while (0)
++#else
++#define	BHSIZE(mfp, sz) do {} while (0)
++#define	BHALIGN(mfp, p) do {} while (0)
++#define	BHUNALIGN(mfp, p) do {} while (0)
++#endif
+ 
++#if defined(DIAG_MVCC) && defined(HAVE_MPROTECT)
+ #ifdef linux
+ #define	MVCC_MPROTECT(buf, sz, mode) do {				\
+ 	int __ret = mprotect((buf), (sz), (mode));			\
+@@ -513,11 +535,7 @@
+ 	}								\
+ } while (0)
+ #endif /* linux */
+-
+-#else /* defined(DIAG_MVCC) && defined(HAVE_MPROTECT) */
+-#define	MVCC_BHSIZE(mfp, sz) do {} while (0)
+-#define	MVCC_BHALIGN(mfp, p) do {} while (0)
+-#define	MVCC_BHUNALIGN(mfp, p) do {} while (0)
++#else
+ #define	MVCC_MPROTECT(buf, size, mode) do {} while (0)
+ #endif
+ 
+--- mp/mp_alloc.c.orig	2006-09-07 14:32:03.000000000 -0700
++++ mp/mp_alloc.c	2007-01-06 19:14:56.000000000 -0800
+@@ -66,7 +66,7 @@
+ 	if (mfp != NULL) {
+ 		len = SSZA(BH, buf) + mfp->stat.st_pagesize;
+ 		/* Add space for alignment padding for MVCC diagnostics. */
+-		MVCC_BHSIZE(mfp, len);
++		BHSIZE(mfp, len);
+ 	}
+ 
+ 	MPOOL_REGION_LOCK(dbenv, infop);
+@@ -91,10 +91,10 @@
+ 			c_mp->stat.st_pages++;
+ 		MPOOL_REGION_UNLOCK(dbenv, infop);
+ 		/*
+-		 * For MVCC diagnostics, align the pointer so that the buffer
++		 * If necessary, align the pointer so that the buffer
+ 		 * starts on a page boundary.
+ 		 */
+-		MVCC_BHALIGN(mfp, p);
++		BHALIGN(mfp, p);
+ 
+ found:		if (offsetp != NULL)
+ 			*offsetp = R_OFFSET(infop, p);
+@@ -447,7 +447,7 @@
+ 	MPOOLFILE *mfp;
+ 	void *buf;
+ {
+-	MVCC_BHUNALIGN(mfp, buf);
++	BHUNALIGN(mfp, buf);
+ 	COMPQUIET(mfp, NULL);
+ 	__db_shalloc_free(infop, buf);
+ }
+--- mp/mp_fget.c.orig	2006-09-13 09:22:42.000000000 -0700
++++ mp/mp_fget.c	2007-01-06 19:14:56.000000000 -0800
+@@ -708,7 +708,7 @@
+ 		 * the hash bucket's priority.
+ 		 */
+ 		/*lint --e{668} (flexelint: bhp cannot be NULL). */
+-#ifdef DIAG_MVCC
++#ifdef BH_ALIGNED
+ 		memset(bhp, 0, SSZ(BH, align_off));
+ #else
+ 		memset(bhp, 0, sizeof(BH));
+
