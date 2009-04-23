@@ -1605,7 +1605,6 @@ static void bdb_errcall(const DB_ENV* dbenv, const char* errpfx, const char* msg
 
 static void bdb_msgcall(const DB_ENV* dbenv, const char* msg)
 {
-    printf("msgcall: %s\n", msg);
     READ_LOCK(G_LOG_RWLOCK);
     if (G_LOG_PORT)
     {
