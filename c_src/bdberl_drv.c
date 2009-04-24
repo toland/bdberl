@@ -1535,8 +1535,6 @@ static void* checkpointer(void* arg)
     time_t last_checkpoint_time = time(0);
     time_t last_trickle_time = time(0);
 
-    printf("Starting checkpointer\n");
-
     while (G_CHECKPOINT_ACTIVE)
     {
         time_t now = time(0);
