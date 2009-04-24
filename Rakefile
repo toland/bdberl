@@ -23,4 +23,6 @@ file 'c_src/bdberl_drv.c' => [DB_LIB]
 task 'faxien:package' do
   Dir.mkdir "#{PACKAGE_DIR}/priv/bin"
   FileUtils.cp_r Dir.glob('c_src/system/bin/*'), "#{PACKAGE_DIR}/priv/bin", :verbose => false
+  Dir.mkdir "#{PACKAGE_DIR}/mibs"
+  FileUtils.cp_r Dir.glob('mibs/*.mib'), "#{PACKAGE_DIR}/mibs", :verbose => false
 end
