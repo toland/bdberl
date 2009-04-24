@@ -1,5 +1,6 @@
 require 'erlbox'
 require 'erlbox/driver'
+require 'erlbox/snmp'
 
 CLOBBER.include %w( c_src/system )
 
