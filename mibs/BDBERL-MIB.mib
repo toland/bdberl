@@ -1,0 +1,60 @@
+BDBERL-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    enterprises, Counter, Gauge FROM RFC1155-SMI
+    OBJECT-TYPE FROM RFC-1212
+    DisplayString FROM RFC1213-MIB;
+
+hive    OBJECT IDENTIFIER ::= {enterprises 30387}
+bdberl  OBJECT IDENTIFIER ::= {hive 13}
+
+bdbTrickleWrites OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Number of trickle writes completed since startup."
+    ::= {bdberl 1}
+
+bdbTrickleRuntimeSecs OBJECT-TYPE
+    SYNTAX Gauge
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Number of seconds to complete last successful trickle write."
+    ::= {bdberl 2}
+
+bdbTricklePages OBJECT-TYPE
+    SYNTAX Gauge
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Number of pages flushed from cache in last successful trickle write."
+    ::= {bdberl 3}
+
+bdbCheckpoints OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Number of checkpoints completed since startup."
+    ::= {bdberl 4}
+
+bdbCheckpointRuntimeSecs OBJECT-TYPE
+    SYNTAX Gauge
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Number of seconds to complete last successful checkpoint."
+    ::= {bdberl 5}
+
+bdbArchiveRuntimeSecs OBJECT-TYPE
+    SYNTAX Gauge
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Number of seconds to complete last successful log_archive."
+    ::= {bdberl 6}
+
+
+END
