@@ -1,6 +1,6 @@
 {application, bdberl,
  [{description, "Berkeley DB Erlang Driver"},
-  {vsn, "8"},
+  {vsn, "9"},
   {modules, [ bdberl, bdberl_logger ]},
   {registered, []},
   {applications, [kernel, 
