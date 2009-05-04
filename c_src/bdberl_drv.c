@@ -129,6 +129,11 @@ static ErlDrvTermData G_LOG_PID;
 static ErlDrvPort     G_LOG_PORT;
 
 /**
+ * Default page size to use for newly created databases
+ */
+static unsigned int G_PAGE_SIZE = 0;
+
+/**
  *
  */
 static TPool* G_TPOOL_GENERAL = NULL;
@@ -187,6 +192,13 @@ DRIVER_INIT(bdberl_drv)
         DB_USE_ENVIRON |        /* Use DB_HOME environment variable */
         DB_THREAD;              /* Make the environment free-threaded */
 
+    // Check for environment flag which indicates we want to use DB_SYSTEM_MEM
+    char* use_system_mem = getenv("BDBERL_SYSTEM_MEM");
+    if (use_system_mem != 0)
+    {
+        flags |= DB_SYSTEM_MEM;
+    }
+
     // Initialize global environment -- use environment variable DB_HOME to 
     // specify where the working directory is
     G_DB_ENV_ERROR = db_env_create(&G_DB_ENV, 0); 
@@ -244,6 +256,18 @@ DRIVER_INIT(bdberl_drv)
             if (G_TRICKLE_PERCENTAGE <= 0)
             {
                 G_TRICKLE_PERCENTAGE = 50;
+            }
+        }
+
+        // Initialize default page size
+        char* page_size_str = getenv("BDBERL_PAGE_SIZE");
+        if (page_size_str != 0)
+        {
+            // Convert to integer and only set it if it is a power of 2.
+            unsigned int page_size = atoi(page_size_str);
+            if (page_size != 0 && ((page_size & (~page_size +1)) == page_size))
+            {
+                G_PAGE_SIZE = page_size;
             }
         }
 
@@ -829,6 +853,15 @@ static int open_database(const char* name, DBTYPE type, unsigned int flags, Port
             // the code
             WRITE_UNLOCK(G_DATABASES_RWLOCK);
             return rc;
+        }
+
+        // If a custom page size has been specified, try to use it
+        if (G_PAGE_SIZE > 0)
+        {
+            if (db->set_pagesize(db, G_PAGE_SIZE) != 0)
+            {
+                bdb_errcall(G_DB_ENV, "", "Failed to set page size.");
+            }
         }
 
         // Attempt to open our database
