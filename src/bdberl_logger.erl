@@ -45,7 +45,7 @@ init([]) ->
         true ->
             load_mibs(['BDBERL-MIB']);
         false ->
-            error_logger:warn_msg("SNMP is not running; bdberl Stats will not be published.\n")
+            error_logger:warning_msg("SNMP is not running; bdberl stats will not be published.\n")
     end,
     
     {ok, #state{}}.
