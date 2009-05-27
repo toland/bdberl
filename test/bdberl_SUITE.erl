@@ -36,7 +36,8 @@ all() ->
      hash_stat_should_report_on_success,
      stat_should_fail_on_bad_dbref,
      lock_stat_should_report_on_success,
-     log_stat_should_report_on_success].
+     log_stat_should_report_on_success,
+     memp_stat_should_report_on_success].
 
 
 dbconfig(Config) ->
@@ -290,4 +291,10 @@ log_stat_should_report_on_success(_Config) ->
     {ok, Stat} = bdberl:log_stat([]),
     %% Check a log stat that that probably won't change
     264584 = proplists:get_value(magic, Stat),
+    done.
+
+memp_stat_should_report_on_success(_Config) ->
+    {ok, Gstat, Fstat} = bdberl:memp_stat([]),
+    true = is_list(Fstat),
+    true = is_list(Gstat),
     done.

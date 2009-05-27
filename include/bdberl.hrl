@@ -30,6 +30,8 @@
 -define(CMD_LOCK_STAT_PRINT, 22).
 -define(CMD_LOG_STAT,        23).
 -define(CMD_LOG_STAT_PRINT,  24).
+-define(CMD_MEMP_STAT,      25).
+-define(CMD_MEMP_STAT_PRINT,26).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).

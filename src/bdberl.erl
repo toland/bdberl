@@ -20,6 +20,8 @@
          lock_stat_print/1,
          log_stat/1,
          log_stat_print/1,
+         memp_stat/1,
+         memp_stat_print/1,
          env_stat_print/1, 
          transaction/1, transaction/2, transaction/3,
          put/3, put/4,
@@ -1544,6 +1546,76 @@ log_stat_print(Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Retrieve memory pool stats
+%%
+%% This function retrieves bdb mpool statistics
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec memp_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+memp_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MEMP_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            recv_memp_stat([]);
+        Error ->
+            {error, Error}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print memory pool stats
+%%
+%% This function prints bdb mpool statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%%   <dt>stat_memp_hash</dt>
+%%   <ddDisplay the buffers with hash chains.</dd>
+%% </dl>
+%%
+%% @spec memp_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+memp_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MEMP_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
 %% Print environment stats
 %%
 %% This function prints environment statistics to wherever
@@ -1700,6 +1772,7 @@ flag_value(Flag) ->
         stat_lock_lockers -> ?DB_STAT_LOCK_LOCKERS;
         stat_lock_objects -> ?DB_STAT_LOCK_OBJECTS;
         stat_lock_params  -> ?DB_STAT_LOCK_PARAMS;
+        stat_memp_hash    -> ?DB_STAT_MEMP_HASH;
         stat_subsystem   -> ?DB_STAT_SUBSYSTEM;
         threaded         -> ?DB_THREAD;
         truncate         -> ?DB_TRUNCATE;
@@ -1765,3 +1838,17 @@ split_bin(Delimiter, <<Delimiter:8, Rest/binary>>, ItemAcc, Acc) ->
     split_bin(Delimiter, Rest, <<>> ,[ItemAcc | Acc]);
 split_bin(Delimiter, <<Other:8, Rest/binary>>, ItemAcc, Acc) ->
     split_bin(Delimiter, Rest, <<ItemAcc/binary, Other:8>>, Acc).
+
+
+%%
+%% Receive memory pool stats
+%%
+recv_memp_stat(Fstats) ->
+    receive
+        {error, Reason} ->
+            {error, decode_rc(Reason)};
+        {fstat, Fstat} ->
+            recv_memp_stat([Fstat|Fstats]);
+        {ok, Stats} ->
+            {ok, Stats, Fstats}
+    end.
