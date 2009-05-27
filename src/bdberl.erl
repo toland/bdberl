@@ -18,6 +18,8 @@
          stat_print/2,
          lock_stat/1,
          lock_stat_print/1,
+         log_stat/1,
+         log_stat_print/1,
          env_stat_print/1, 
          transaction/1, transaction/2, transaction/3,
          put/3, put/4,
@@ -1399,7 +1401,7 @@ stat_print(Db, Opts) ->
 %%   <dd>Reset statistics after returning their values</dd>
 %% </dl>
 %%
-%% @spec stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% @spec lock_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
 %% where
 %%    Opts = [atom()]
 %%
@@ -1423,7 +1425,6 @@ lock_stat(Opts) ->
         Error ->
             {error, Error}
     end.
-
 
 
 %%--------------------------------------------------------------------
@@ -1462,6 +1463,79 @@ lock_stat_print(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/native>>,
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOCK_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve log stats
+%%
+%% This function retrieves bdb log statistics
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec log_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+log_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {error, Reason} ->
+                    {error, decode_rc(Reason)};
+                {ok, Stats} ->
+                    {ok, Stats}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print log stats
+%%
+%% This function prints bdb log statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%% </dl>
+%%
+%% @spec log_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+log_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_STAT_PRINT, Cmd),
     case decode_rc(Result) of
         ok -> ok;
         Error -> {error, Error}

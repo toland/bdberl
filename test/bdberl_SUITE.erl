@@ -35,7 +35,8 @@ all() ->
      btree_stat_should_report_on_success,
      hash_stat_should_report_on_success,
      stat_should_fail_on_bad_dbref,
-     lock_stat_should_report_on_success].
+     lock_stat_should_report_on_success,
+     log_stat_should_report_on_success].
 
 
 dbconfig(Config) ->
@@ -283,4 +284,10 @@ lock_stat_should_report_on_success(_Config) ->
     {ok, Stat} = bdberl:lock_stat([]),
     %% Check a lock stat that that probably won't change
     2147483647 = proplists:get_value(cur_maxid, Stat),
+    done.
+
+log_stat_should_report_on_success(_Config) ->
+    {ok, Stat} = bdberl:log_stat([]),
+    %% Check a log stat that that probably won't change
+    264584 = proplists:get_value(magic, Stat),
     done.
