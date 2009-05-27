@@ -14,6 +14,8 @@
          get_cache_size/0,
          get_data_dirs/0,
          get_txn_timeout/0,
+         stat/2,
+         stat_print/1, stat_print/2,
          transaction/1, transaction/2, transaction/3,
          put/3, put/4,
          put_r/3, put_r/4,
@@ -1280,6 +1282,146 @@ get_txn_timeout() ->
             {error, decode_rc(Result)}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve database stats
+%%
+%% This function retrieves performance statistics from the database.
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>fast_stat</dt>
+%%   <dd>Return only the values which do not require traversal of the database. 
+%%       Among  other things, this flag makes it possible for applications to
+%%       request key and record counts without incurring the performance 
+%%       penalty of traversing the entire database.</dd>
+%%   <dt>read_committed</dt>
+%%   <dd>Database items read during a transactional call will have degree 2 
+%%       isolation. This ensures the stability of the data items read during
+%%       the stat operation but permits that data to be modified or deleted by
+%%       other transactions prior to the commit of the specified 
+%%       transaction.</dd>
+%%   <dt>read_uncommitted</dt>
+%%   <dd>Database items read during a transactional call will have degree 1 
+%%       isolation, including modified but not yet committed data. Silently 
+%%       ignored if the read_committed flag was not specified when the 
+%%       underlying database was opened.</dd>
+%% </dl>
+%%
+%% @spec stat(Db, Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Db = integer()
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat(Db :: db(), Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+stat(Db, Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Db:32/signed-native, Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_DB_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {error, Reason} ->
+                    {error, decode_rc(Reason)};
+                {ok, Stats} ->
+                    {ok, Stats}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print database stats
+%%
+%% This function prints performance statistics from the database to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>fast_stat</dt>
+%%   <dd>Return only the values which do not require traversal of the database. 
+%%       Among  other things, this flag makes it possible for applications to
+%%       request key and record counts without incurring the performance 
+%%       penalty of traversing the entire database.</dd>
+%%   <dt>read_committed</dt>
+%%   <dd>Database items read during a transactional call will have degree 2 
+%%       isolation. This ensures the stability of the data items read during
+%%       the stat operation but permits that data to be modified or deleted by
+%%       other transactions prior to the commit of the specified transaction.
+%%       </dd>
+%%   <dt>read_uncommitted</dt>
+%%   <dd>Database items read during a transactional call will have degree 1 
+%%       isolation, including modified but not yet committed data. Silently 
+%%       ignored if the read_committed flag was not specified when the 
+%%       underlying database was opened.</dd>
+%% </dl>
+%%
+%% @spec stat_print(Db, Opts) -> ok | {error, Error}
+%% where
+%%    Db = integer()
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat_print(Db :: db(), Opts :: db_flags()) ->
+    ok | db_error().
+stat_print(Db, Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Db:32/signed-native, Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_DB_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print environment stats
+%%
+%% This function prints environment statistics to wherever
+%% BDB messages are being sent.  There is no documented way
+%% to get this programatically
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%%   <dt>stat_subsystem</dt>
+%%   <dd>Display information for all configured subsystems.</dd>
+%% </dl>
+%%
+%% @spec stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Db = integer()
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_ENV_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+    
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1379,6 +1521,7 @@ flag_value(Flag) ->
         consume_wait     -> ?DB_CONSUME_WAIT;
         create           -> ?DB_CREATE;
         exclusive        -> ?DB_EXCL;
+        fast_stat        -> ?DB_FAST_STAT;
         get_both         -> ?DB_GET_BOTH;
         ignore_lease     -> ?DB_IGNORE_LEASE;
         multiple         -> ?DB_MULTIPLE;
@@ -1392,6 +1535,9 @@ flag_value(Flag) ->
         readonly         -> ?DB_RDONLY;
         rmw              -> ?DB_RMW;
         set_recno        -> ?DB_SET_RECNO;
+        stat_all         -> ?DB_STAT_ALL;
+        stat_clear       -> ?DB_STAT_CLEAR;
+        stat_subsystem   -> ?DB_STAT_SUBSYSTEM;
         threaded         -> ?DB_THREAD;
         truncate         -> ?DB_TRUNCATE;
         txn_no_sync      -> ?DB_TXN_NOSYNC;

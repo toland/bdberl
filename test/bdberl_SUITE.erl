@@ -31,7 +31,10 @@ all() ->
      delete_should_remove_file,
      delete_should_fail_if_db_inuse,
      truncate_should_empty_database,
-     truncate_all_should_empty_all_databases].
+     truncate_all_should_empty_all_databases,
+     btree_stat_should_report_on_success,
+     hash_stat_should_report_on_success,
+     stat_should_fail_on_bad_dbref].
 
 
 dbconfig(Config) ->
@@ -237,3 +240,40 @@ truncate_all_should_empty_all_databases(Config) ->
     ok = bdberl:put(Db, mykey, avalue),
     ok = bdberl:truncate(),
     not_found = bdberl:get(Db, mykey).
+
+btree_stat_should_report_on_success(_Config) ->
+    {ok, Db} = bdberl:open("btree_stat.bdb", btree),
+    {ok, Stat} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    0 = proplists:get_value(nkeys, Stat),
+    0 = proplists:get_value(ndata, Stat),
+
+    %%  Put a record and check the number of records updates
+    ok = bdberl:put(Db, mykey, avalue),
+
+    {ok, Stat1} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    1 = proplists:get_value(nkeys, Stat1),
+    1 = proplists:get_value(ndata, Stat1),
+    done.
+
+
+hash_stat_should_report_on_success(_Config) ->
+    {ok, Db} = bdberl:open("hash_stat.bdb", hash),
+    {ok, Stat} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    0 = proplists:get_value(nkeys, Stat),
+    0 = proplists:get_value(ndata, Stat),
+
+    %%  Put a record and check the number of records updates
+    ok = bdberl:put(Db, mykey, avalue),
+
+    {ok, Stat1} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    1 = proplists:get_value(nkeys, Stat1),
+    1 = proplists:get_value(ndata, Stat1),
+    done.
+    
+stat_should_fail_on_bad_dbref(_Config) ->
+    {error, invalid_db} = bdberl:stat(10000000, []),
+    done.

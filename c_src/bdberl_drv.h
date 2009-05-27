@@ -46,6 +46,9 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define CMD_REMOVE_DB       15
 #define CMD_TRUNCATE        16
 #define CMD_REGISTER_LOGGER 17
+#define CMD_DB_STAT         18
+#define CMD_DB_STAT_PRINT   19
+#define CMD_ENV_STAT_PRINT  20
 
 /**
  * Command status values
@@ -74,7 +77,8 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define ERROR_CURSOR_OPEN   (-29005) /* Cursor already active on this port */
 #define ERROR_NO_CURSOR     (-29006) /* No cursor open on this port */
 #define ERROR_DB_ACTIVE     (-29007) /* Database is currently active; operation requires otherwise */
-
+#define ERROR_INVALID_CMD   (-29008) /* Invalid command code requested */
+#define ERROR_INVALID_DB_TYPE  (-29009) /* Invalid database type */
 
 /**
  * System information ids
