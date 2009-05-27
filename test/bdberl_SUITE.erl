@@ -37,7 +37,8 @@ all() ->
      stat_should_fail_on_bad_dbref,
      lock_stat_should_report_on_success,
      log_stat_should_report_on_success,
-     memp_stat_should_report_on_success].
+     memp_stat_should_report_on_success,
+     mutex_stat_should_report_on_success].
 
 
 dbconfig(Config) ->
@@ -297,4 +298,8 @@ memp_stat_should_report_on_success(_Config) ->
     {ok, Gstat, Fstat} = bdberl:memp_stat([]),
     true = is_list(Fstat),
     true = is_list(Gstat),
+    done.
+
+mutex_stat_should_report_on_success(_Config) ->
+    {ok, _Stat} = bdberl:mutex_stat([]),
     done.

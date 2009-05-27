@@ -38,6 +38,7 @@ static void do_async_stat(void* arg);
 static void do_async_lock_stat(void* arg);
 static void do_async_log_stat(void* arg);
 static void do_async_memp_stat(void* arg);
+static void do_async_mutex_stat(void* arg);
 
 static int add_dbref(PortData* data, int dbref);
 static int del_dbref(PortData* data, int dbref);
@@ -966,6 +967,45 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         int rc = G_DB_ENV->memp_stat_print(G_DB_ENV, flags);
         RETURN_INT(rc, outbuf);
     }
+    case CMD_MUTEX_STAT:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Inbuf is <<Flags:32 >>
+        // If the working buffer is large enough, copy the data to put/get into it. Otherwise, realloc
+        // until it is large enough
+        if (d->work_buffer_sz < inbuf_sz)
+        {
+            d->work_buffer = driver_realloc(d->work_buffer, inbuf_sz);
+            d->work_buffer_sz = inbuf_sz;
+        }
+        
+        // Copy the payload into place
+        memcpy(d->work_buffer, inbuf, inbuf_sz);
+        d->work_buffer_offset = inbuf_sz;
+        
+        // Mark the port as busy and then schedule the appropriate async operation
+        d->async_op = cmd;
+        d->async_pool = G_TPOOL_GENERAL;
+        bdberl_tpool_run(d->async_pool, &do_async_mutex_stat, d, 0, &d->async_job);
+        
+        // Let caller know that the operation is in progress
+        // Outbuf is: <<0:32>>
+        RETURN_INT(0, outbuf);
+    }
+    case CMD_MUTEX_STAT_PRINT:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Inbuf is << Flags:32 >>
+        unsigned int flags = UNPACK_INT(inbuf, 0);
+            
+        // Outbuf is <<Rc:32>>
+        // Run the command on the VM thread - this is for debugging only,
+        // any real monitoring will use the async lock_stat 
+        int rc = G_DB_ENV->mutex_stat_print(G_DB_ENV, flags);
+        RETURN_INT(rc, outbuf);
+    }
     }
     *outbuf = 0;
     return 0;
@@ -1640,6 +1680,37 @@ static void async_cleanup_and_send_memp_stats(PortData* d, DB_MPOOL_STAT *gsp,
 }
 
 
+static void async_cleanup_and_send_mutex_stats(PortData* d, DB_MUTEX_STAT *msp)
+{
+    // Save the port and pid references -- we need copies independent from the PortData
+    // structure. Once we release the port_lock after clearing the cmd, it's possible that
+    // the port could go away without waiting on us to finish. This is acceptable, but we need
+    // to be certain that there is no overlap of data between the two threads. driver_send_term
+    // is safe to use from a thread, even if the port you're sending from has already expired.
+    ErlDrvPort port = d->port;
+    ErlDrvTermData pid = d->port_owner;
+    async_cleanup(d);
+
+    ErlDrvTermData response[] = {
+        ERL_DRV_ATOM, driver_mk_atom("ok"),
+        // Start of list
+	ST_STATS_TUPLE(msp, mutex_align),	/* Mutex alignment */
+	ST_STATS_TUPLE(msp, mutex_tas_spins),	/* Mutex test-and-set spins */
+	ST_STATS_TUPLE(msp, mutex_cnt),		/* Mutex count */
+	ST_STATS_TUPLE(msp, mutex_free),	/* Available mutexes */
+	ST_STATS_TUPLE(msp, mutex_inuse),	/* Mutexes in use */
+	ST_STATS_TUPLE(msp, mutex_inuse_max),	/* Maximum mutexes ever in use */
+	ST_STATS_TUPLE(msp, region_wait),	/* Region lock granted after wait. */
+	ST_STATS_TUPLE(msp, region_nowait),	/* Region lock granted without wait. */
+	ST_STATS_TUPLE(msp, regsize),		/* Region size. */
+        // End of list
+        ERL_DRV_NIL, 
+        ERL_DRV_LIST, 9+1,
+        ERL_DRV_TUPLE, 2 
+    };
+    driver_send_term(port, pid, response, sizeof(response) / sizeof(response[0]));
+}
+
 
 static void do_async_put(void* arg)
 {
@@ -1955,7 +2026,7 @@ static void do_async_log_stat(void* arg)
         async_cleanup_and_send_log_stats(d, lsp);
     }
  
-    // Finally, clean up lock stats
+    // Finally, clean up stats
     if (NULL != lsp)
     {
         free(lsp);
@@ -1982,7 +2053,7 @@ static void do_async_memp_stat(void* arg)
         async_cleanup_and_send_memp_stats(d, gsp, fsp);
     }
  
-    // Finally, clean up lock stats
+    // Finally, clean up stats
     if (NULL != gsp)
     {
         free(gsp);
@@ -1993,6 +2064,31 @@ static void do_async_memp_stat(void* arg)
     }
 }
 
+static void do_async_mutex_stat(void* arg)
+{
+    // Payload is: <<Flags:32 >>
+    PortData* d = (PortData*)arg;
+
+    // Extract operation flags
+    unsigned flags = UNPACK_INT(d->work_buffer, 0);
+
+    DB_MUTEX_STAT *msp = NULL;
+    int rc = G_DB_ENV->mutex_stat(G_DB_ENV, &msp, flags);
+    if (rc != 0 || msp == NULL)
+    {
+        async_cleanup_and_send_rc(d, rc);
+    }
+    else
+    {
+        async_cleanup_and_send_mutex_stats(d, msp);
+    }
+ 
+    // Finally, clean up stats
+    if (NULL != msp)
+    {
+        free(msp);
+    }
+}
 
 static void* zalloc(unsigned int size)
 {
