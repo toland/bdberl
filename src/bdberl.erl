@@ -326,9 +326,15 @@ txn_begin(Opts) ->
     Cmd = <<Flags:32/native>>,
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
     case decode_rc(Result) of
-        ok -> ok;
-        Error -> {error, Error}
+        ok ->
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, decode_rc(Reason)}
+            end;
+        Error ->
+            {error, Error}
     end.
+
 
 
 %%--------------------------------------------------------------------

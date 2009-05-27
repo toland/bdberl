@@ -528,12 +528,14 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
             RETURN_INT(ERROR_TXN_OPEN, outbuf);
         }
 
-        // Inbuf is <<Flags:32/unsigned>>
-        unsigned flags = UNPACK_INT(inbuf, 0);
+        // Setup async command and schedule it on the txns threadpool
+        d->async_op = cmd;
+        d->async_flags = UNPACK_INT(inbuf, 0);
+        d->async_pool = G_TPOOL_TXNS;
+        bdberl_tpool_run(d->async_pool, &do_async_txnop, d, 0, &d->async_job);
 
         // Outbuf is <<Rc:32>>
-        int rc = G_DB_ENV->txn_begin(G_DB_ENV, 0, &(d->txn), flags);
-        RETURN_INT(rc, outbuf);
+        RETURN_INT(0, outbuf);
     }
     case CMD_TXN_COMMIT:
     case CMD_TXN_ABORT:
@@ -1172,19 +1174,22 @@ static void do_async_txnop(void* arg)
 {
     PortData* d = (PortData*)arg;
 
-    // Execute the actual commit/abort
+    // Execute the actual begin/commit/abort
     int rc = 0;
-    if (d->async_op == CMD_TXN_COMMIT)
+    if (d->async_op == CMD_TXN_BEGIN)
+    {
+        rc = G_DB_ENV->txn_begin(G_DB_ENV, 0, &(d->txn), d->async_flags);
+    }
+    else if (d->async_op == CMD_TXN_COMMIT)
     {
         rc = d->txn->commit(d->txn, d->async_flags);
+        d->txn = 0;
     }
     else 
     {
         rc = d->txn->abort(d->txn);
+        d->txn = 0;
     }
-
-    // The transaction is now invalid, regardless of the outcome. 
-    d->txn = 0;
 
     async_cleanup_and_send_rc(d, rc);
 }
