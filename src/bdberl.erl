@@ -15,7 +15,10 @@
          get_data_dirs/0,
          get_txn_timeout/0,
          stat/2,
-         stat_print/1, stat_print/2,
+         stat_print/2,
+         lock_stat/1,
+         lock_stat_print/1,
+         env_stat_print/1, 
          transaction/1, transaction/2, transaction/3,
          put/3, put/4,
          put_r/3, put_r/4,
@@ -1286,7 +1289,7 @@ get_txn_timeout() ->
 %% @doc
 %% Retrieve database stats
 %%
-%% This function retrieves performance statistics from the database.
+%% This function retrieves database statistics 
 %%
 %% === Options ===
 %%
@@ -1336,11 +1339,12 @@ stat(Db, Opts) ->
     end.
 
 
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Print database stats
 %%
-%% This function prints performance statistics from the database to wherever
+%% This function prints statistics from the database to wherever
 %% BDB messages are being sent
 %%
 %% === Options ===
@@ -1382,6 +1386,87 @@ stat_print(Db, Opts) ->
         Error -> {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve lock stats
+%%
+%% This function retrieves lock statistics from the database.
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+lock_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOCK_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {error, Reason} ->
+                    {error, decode_rc(Reason)};
+                {ok, Stats} ->
+                    {ok, Stats}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print lock stats
+%%
+%% This function prints lock statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%%   <dt>stat_lock_conf</dt>
+%%   <dd>Display the lock conflict matrix.</dd>
+%%   <dt>stat_lock_lockers</dt>
+%%   <dd>Display the lockers within hash chains.</dd>
+%%   <dt>stat_lock_objects</dt>
+%%   <dd>Display the lock objects within hash chains.</dd>
+%%   <dt>stat_lock_params</dt>
+%%   <dd>Display the locking subsystem parameters.</dd>
+%% </dl>
+%%
+%% @spec lock_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+lock_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOCK_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1409,9 +1494,9 @@ stat_print(Db, Opts) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec stat_print(Opts :: db_flags()) ->
+-spec env_stat_print(Opts :: db_flags()) ->
     ok | db_error().
-stat_print(Opts) ->
+env_stat_print(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/native>>,
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_ENV_STAT_PRINT, Cmd),
@@ -1537,6 +1622,10 @@ flag_value(Flag) ->
         set_recno        -> ?DB_SET_RECNO;
         stat_all         -> ?DB_STAT_ALL;
         stat_clear       -> ?DB_STAT_CLEAR;
+        stat_lock_conf   -> ?DB_STAT_LOCK_CONF;
+        stat_lock_lockers -> ?DB_STAT_LOCK_LOCKERS;
+        stat_lock_objects -> ?DB_STAT_LOCK_OBJECTS;
+        stat_lock_params  -> ?DB_STAT_LOCK_PARAMS;
         stat_subsystem   -> ?DB_STAT_SUBSYSTEM;
         threaded         -> ?DB_THREAD;
         truncate         -> ?DB_TRUNCATE;

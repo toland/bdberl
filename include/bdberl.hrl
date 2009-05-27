@@ -26,6 +26,8 @@
 -define(CMD_DB_STAT,         18).
 -define(CMD_DB_STAT_PRINT,   19).
 -define(CMD_ENV_STAT_PRINT,  20).
+-define(CMD_LOCK_STAT,       21).
+-define(CMD_LOCK_STAT_PRINT, 22).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).

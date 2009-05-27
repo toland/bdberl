@@ -34,7 +34,8 @@ all() ->
      truncate_all_should_empty_all_databases,
      btree_stat_should_report_on_success,
      hash_stat_should_report_on_success,
-     stat_should_fail_on_bad_dbref].
+     stat_should_fail_on_bad_dbref,
+     lock_stat_should_report_on_success].
 
 
 dbconfig(Config) ->
@@ -276,4 +277,10 @@ hash_stat_should_report_on_success(_Config) ->
     
 stat_should_fail_on_bad_dbref(_Config) ->
     {error, invalid_db} = bdberl:stat(10000000, []),
+    done.
+
+lock_stat_should_report_on_success(_Config) ->
+    {ok, Stat} = bdberl:lock_stat([]),
+    %% Check a lock stat that that probably won't change
+    2147483647 = proplists:get_value(cur_maxid, Stat),
     done.

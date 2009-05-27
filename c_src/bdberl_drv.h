@@ -49,6 +49,8 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define CMD_DB_STAT         18
 #define CMD_DB_STAT_PRINT   19
 #define CMD_ENV_STAT_PRINT  20
+#define CMD_LOCK_STAT       21
+#define CMD_LOCK_STAT_PRINT 22
 
 /**
  * Command status values
