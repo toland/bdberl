@@ -14,19 +14,19 @@
          get_cache_size/0,
          get_data_dirs/0,
          get_txn_timeout/0,
-         stat/2,
-         stat_print/2,
-         lock_stat/1,
-         lock_stat_print/1,
-         log_stat/1,
-         log_stat_print/1,
-         memp_stat/1,
-         memp_stat_print/1,
-         mutex_stat/1,
-         mutex_stat_print/1,
-         txn_stat/1,
-         txn_stat_print/1,
-         env_stat_print/1, 
+         stat/1, stat/2,
+         stat_print/1, stat_print/2,
+         lock_stat/0, lock_stat/1,
+         lock_stat_print/0, lock_stat_print/1,
+         log_stat/0, log_stat/1,
+         log_stat_print/0, log_stat_print/1,
+         memp_stat/0, memp_stat/1,
+         memp_stat_print/0, memp_stat_print/1,
+         mutex_stat/0, mutex_stat/1,
+         mutex_stat_print/0, mutex_stat_print/1,
+         txn_stat/0, txn_stat/1,
+         txn_stat_print/0, txn_stat_print/1,
+         env_stat_print/0, env_stat_print/1, 
          transaction/1, transaction/2, transaction/3,
          put/3, put/4,
          put_r/3, put_r/4,
@@ -1346,6 +1346,20 @@ stat(Db, Opts) ->
             {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve database stats with empty flags
+%%
+%% @spec stat(Db) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Db = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+stat(Db) ->
+    stat(Db, []).
 
 
 %%--------------------------------------------------------------------
@@ -1396,6 +1410,21 @@ stat_print(Db, Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Print database stats with empty flags
+%%
+%% @spec stat_print(Db) -> ok | {error, Error}
+%% where
+%%    Db = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat_print(Db :: db()) ->
+    ok | db_error().
+stat_print(Db) ->
+    stat_print(Db, []).
+
+%%--------------------------------------------------------------------
+%% @doc
 %% Retrieve lock stats
 %%
 %% This function retrieves lock statistics from the database.
@@ -1432,6 +1461,18 @@ lock_stat(Opts) ->
             {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve lock stats with no flags
+%%
+%% @spec lock_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+lock_stat() ->
+    lock_stat([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1474,6 +1515,19 @@ lock_stat_print(Opts) ->
         Error -> {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Print lock stats with empty flags
+%%
+%% @spec lock_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat_print() ->
+    ok | db_error().
+lock_stat_print() ->
+    lock_stat_print([]).
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1513,6 +1567,18 @@ log_stat(Opts) ->
             {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve log stats with empty flags
+%%
+%% @spec log_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+log_stat() ->
+    log_stat([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1547,6 +1613,18 @@ log_stat_print(Opts) ->
         Error -> {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Print log stats with empty flags
+%%
+%% @spec log_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat_print() ->
+    ok | db_error().
+log_stat_print() ->
+    log_stat_print([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1581,6 +1659,18 @@ memp_stat(Opts) ->
             {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve memory pool stats with empty flags
+%%
+%% @spec memp_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+memp_stat() ->
+    memp_stat([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1597,7 +1687,7 @@ memp_stat(Opts) ->
 %%   <dt>stat_clear</dt>
 %%   <dd>Reset statistics after displaying their values.</dd>
 %%   <dt>stat_memp_hash</dt>
-%%   <ddDisplay the buffers with hash chains.</dd>
+%%   <dd>Display the buffers with hash chains.</dd>
 %% </dl>
 %%
 %% @spec memp_stat_print(Opts) -> ok | {error, Error}
@@ -1616,6 +1706,19 @@ memp_stat_print(Opts) ->
         ok -> ok;
         Error -> {error, Error}
     end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print memory pool stats with empty flags
+%%
+%% @spec memp_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat_print() ->
+    ok | db_error().
+memp_stat_print() ->
+    memp_stat_print([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1655,6 +1758,18 @@ mutex_stat(Opts) ->
             {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve mutex stats with empty flags
+%%
+%% @spec mutex_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec mutex_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+mutex_stat() ->
+    mutex_stat([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1691,6 +1806,19 @@ mutex_stat_print(Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Print mutex stats with empty flags
+%%
+%% @spec mutex_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec mutex_stat_print() ->
+    ok | db_error().
+mutex_stat_print() ->
+    mutex_stat_print([]).
+
+%%--------------------------------------------------------------------
+%% @doc
 %% Retrieve transaction stats
 %%
 %% This function retrieves transaction statistics
@@ -1702,14 +1830,14 @@ mutex_stat_print(Opts) ->
 %%   <dd>Reset statistics after returning their values</dd>
 %% </dl>
 %%
-%% @spec txn_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% @spec txn_stat(Opts) -> {ok, [{atom(), number()}], [[{atom(), number()}]]} | {error, Error}
 %% where
 %%    Opts = [atom()]
 %%
 %% @end
 %%--------------------------------------------------------------------
 -spec txn_stat(Opts :: db_flags()) ->
-    {ok, [{atom(), number()}], [any()]} | db_error().
+    {ok, [{atom(), number()}], [[{atom(), number()}]]} | db_error().
 
 txn_stat(Opts) ->
     Flags = process_flags(Opts),
@@ -1722,6 +1850,18 @@ txn_stat(Opts) ->
             {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve transaction stats with empty flags
+%%
+%% @spec txn_stat() -> {ok, [{atom(), number()}], [[{atom(), number()}]]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat() ->
+    {ok, [{atom(), number()}], [[{atom(), number()}]]} | db_error().
+txn_stat() ->
+    txn_stat([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1758,6 +1898,19 @@ txn_stat_print(Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Print transaction stats with empty flags
+%%
+%% @spec txn_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat_print() ->
+    ok | db_error().
+txn_stat_print() ->
+    txn_stat_print([]).
+
+%%--------------------------------------------------------------------
+%% @doc
 %% Print environment stats
 %%
 %% This function prints environment statistics to wherever
@@ -1775,9 +1928,8 @@ txn_stat_print(Opts) ->
 %%   <dd>Display information for all configured subsystems.</dd>
 %% </dl>
 %%
-%% @spec stat_print(Opts) -> ok | {error, Error}
+%% @spec env_stat_print(Opts) -> ok | {error, Error}
 %% where
-%%    Db = integer()
 %%    Opts = [atom()]
 %%
 %% @end
@@ -1793,8 +1945,18 @@ env_stat_print(Opts) ->
         Error -> {error, Error}
     end.
 
-    
-
+%%--------------------------------------------------------------------
+%% @doc
+%% Print environment stats with empty flags
+%%
+%% @spec env_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec env_stat_print() ->
+    ok | db_error().
+env_stat_print() ->
+    env_stat_print([]).
 
 %%--------------------------------------------------------------------
 %% @doc
