@@ -38,7 +38,8 @@ all() ->
      lock_stat_should_report_on_success,
      log_stat_should_report_on_success,
      memp_stat_should_report_on_success,
-     mutex_stat_should_report_on_success].
+     mutex_stat_should_report_on_success,
+     txn_stat_should_report_on_success].
 
 
 dbconfig(Config) ->
@@ -302,4 +303,12 @@ memp_stat_should_report_on_success(_Config) ->
 
 mutex_stat_should_report_on_success(_Config) ->
     {ok, _Stat} = bdberl:mutex_stat([]),
+    done.
+
+txn_stat_should_report_on_success(_Config) ->
+    {ok, _GStat1, []} = bdberl:txn_stat([]),
+    bdberl:txn_begin(),
+    {ok, _GStat2, [_ATxnStat]} = bdberl:txn_stat([]),
+    bdberl:txn_abort(),
+    {ok, _GStat3, []} = bdberl:txn_stat([]),
     done.

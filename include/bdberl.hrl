@@ -34,6 +34,8 @@
 -define(CMD_MEMP_STAT_PRINT, 26).
 -define(CMD_MUTEX_STAT,      27).
 -define(CMD_MUTEX_STAT_PRINT,28).
+-define(CMD_TXN_STAT,        29).
+-define(CMD_TXN_STAT_PRINT,  30).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).

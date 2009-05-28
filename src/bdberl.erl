@@ -24,6 +24,8 @@
          memp_stat_print/1,
          mutex_stat/1,
          mutex_stat_print/1,
+         txn_stat/1,
+         txn_stat_print/1,
          env_stat_print/1, 
          transaction/1, transaction/2, transaction/3,
          put/3, put/4,
@@ -1687,6 +1689,72 @@ mutex_stat_print(Opts) ->
         Error -> {error, Error}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve transaction stats
+%%
+%% This function retrieves transaction statistics
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec txn_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}], [any()]} | db_error().
+
+txn_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            recv_txn_stat([]);
+        Error ->
+            {error, Error}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print transaction stats
+%%
+%% This function prints transaction statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%% </dl>
+%%
+%% @spec txn_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+txn_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1925,4 +1993,17 @@ recv_memp_stat(Fstats) ->
             recv_memp_stat([Fstat|Fstats]);
         {ok, Stats} ->
             {ok, Stats, Fstats}
+    end.
+
+%%
+%% Receive transaction stats
+%%
+recv_txn_stat(Tstats) ->
+    receive
+        {error, Reason} ->
+            {error, decode_rc(Reason)};
+        {txn, Tstat} ->
+            recv_txn_stat([Tstat|Tstats]);
+        {ok, Stats} ->
+            {ok, Stats, Tstats}
     end.
