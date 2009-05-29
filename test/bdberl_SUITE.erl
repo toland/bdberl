@@ -39,7 +39,10 @@ all() ->
      log_stat_should_report_on_success,
      memp_stat_should_report_on_success,
      mutex_stat_should_report_on_success,
-     txn_stat_should_report_on_success].
+     txn_stat_should_report_on_success,
+     data_dirs_info_should_report_on_success,
+     lg_dir_info_should_report_on_success].
+
 
 
 dbconfig(Config) ->
@@ -312,3 +315,10 @@ txn_stat_should_report_on_success(_Config) ->
     bdberl:txn_abort(),
     {ok, _GStat3, []} = bdberl:txn_stat([]),
     done.
+
+data_dirs_info_should_report_on_success(_Config) ->
+    {ok, _DataDirs} = bdberl:get_data_dirs_info().
+
+lg_dir_info_should_report_on_success(_Config) ->
+    {ok, _LgDir, _Fsid, _MBytesAvail} = bdberl:get_lg_dir_info().
+    

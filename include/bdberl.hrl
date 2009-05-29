@@ -36,6 +36,8 @@
 -define(CMD_MUTEX_STAT_PRINT,28).
 -define(CMD_TXN_STAT,        29).
 -define(CMD_TXN_STAT_PRINT,  30).
+-define(CMD_DATA_DIRS_INFO,  31).
+-define(CMD_LOG_DIR_INFO,    32).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).
@@ -44,6 +46,7 @@
 -define(SYSP_CACHESIZE_GET,   1).
 -define(SYSP_TXN_TIMEOUT_GET, 2).
 -define(SYSP_DATA_DIR_GET,    3).
+-define(SYSP_LOG_DIR_GET,     4).
 
 -define(STATUS_OK,    0).
 -define(STATUS_ERROR, 1).

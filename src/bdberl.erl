@@ -13,6 +13,8 @@
          txn_commit/0, txn_commit/1, txn_abort/0,
          get_cache_size/0,
          get_data_dirs/0,
+         get_data_dirs_info/0,
+         get_lg_dir_info/0,
          get_txn_timeout/0,
          stat/1, stat/2,
          stat_print/1, stat_print/2,
@@ -48,10 +50,11 @@
 -type db_name() :: [byte(),...].
 -type db_type() :: btree | hash.
 -type db_flags() :: [atom()].
+-type db_fsid() :: binary().
 -type db_key() :: term().
+-type db_mbytes() :: non_neg_integer().
 -type db_value() :: term().
 -type db_ret_value() :: not_found | db_value().
-
 -type db_error_reason() :: atom() | {unknown, integer()}.
 -type db_error() :: {error, db_error_reason()}.
 
@@ -1269,6 +1272,63 @@ get_data_dirs() ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Returns the list of directories that bdberl searches to find databases
+%% with the number of megabytes available for each dir
+%%
+%% @spec get_data_dirs_info() -> {ok, [DirName, Fsid, MbytesAvail]} | {error, Error}
+%% where
+%%    DirName = string()
+%%    Fsid = binary()
+%%    MbytesAvail = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec get_data_dirs_info() -> {ok, [{string(), db_fsid(), db_mbytes()}]} | db_error().
+
+get_data_dirs_info() ->
+    % Call into the BDB library and get a list of configured data directories
+    Cmd = <<>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(),?CMD_DATA_DIRS_INFO, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            recv_dirs_info([]);
+        Reason ->
+            {error, Reason}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Returns the log directory info (name and megabytes available)
+%%
+%% @spec get_lg_dir_info() -> {ok, DirName, Fsid, MbytesAvail} | {error, Error}
+%% where
+%%    DirName = string()
+%%    Fsid = binary()
+%%    MbytesAvail = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec get_lg_dir_info() -> {ok, string(), db_fsid(), db_mbytes()} | db_error().
+get_lg_dir_info() ->
+    % Call into the BDB library and get the log dir and filesystem info
+    Cmd = <<>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_DIR_INFO, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {dirinfo, Path, FsId, MbytesAvail} ->
+                    {ok, Path, FsId, MbytesAvail};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Reason ->
+            {error, Reason}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
 %% Returns the size of the in-memory cache.
 %%
 %% The cache size is returned as a three element tuple representing the
@@ -2196,3 +2256,17 @@ recv_txn_stat(Tstats) ->
         {ok, Stats} ->
             {ok, Stats, Tstats}
     end.
+
+%%
+%% Receive directory info messages until ok
+%%
+recv_dirs_info(DirInfos) ->
+    receive
+        {dirinfo, Path, FsId, MbytesAvail} ->
+            recv_dirs_info([{Path, FsId, MbytesAvail} | DirInfos]);
+        {error, Reason} ->
+            {error, Reason};
+        ok ->
+            {ok, DirInfos}
+    end.
+    

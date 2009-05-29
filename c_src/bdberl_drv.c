@@ -9,12 +9,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <limits.h>
 #include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/select.h>
+#include <sys/statvfs.h>
 
 #include "hive_hash.h"
 #include "bdberl_drv.h"
@@ -40,7 +43,9 @@ static void do_async_log_stat(void* arg);
 static void do_async_memp_stat(void* arg);
 static void do_async_mutex_stat(void* arg);
 static void do_async_txn_stat(void* arg);
+static void do_sync_data_dirs_info(PortData *p);
 
+static int send_dir_info(ErlDrvPort port, ErlDrvTermData pid, const char *path);
 static void send_rc(ErlDrvPort port, ErlDrvTermData pid, int rc);
 
 static int add_dbref(PortData* data, int dbref);
@@ -1039,6 +1044,44 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         int rc = G_DB_ENV->txn_stat_print(G_DB_ENV, flags);
         RETURN_INT(rc, outbuf);
     }
+    case CMD_DATA_DIRS_INFO:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        do_sync_data_dirs_info(d);
+       
+        // Let caller know that the operation is in progress
+        // Outbuf is: <<0:32>>
+        RETURN_INT(0, outbuf);
+    }
+
+    case CMD_LOG_DIR_INFO:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
+
+        // Find the log dir or use DB_HOME - error if not present
+        const char *lg_dir = NULL;
+        int rc = G_DB_ENV->get_lg_dir(G_DB_ENV, &lg_dir);
+        if (0 == rc && NULL == lg_dir)
+        {
+            rc = G_DB_ENV->get_home(G_DB_ENV, &lg_dir);
+        }
+        // Send info if we can get a dir, otherwise return the error
+        if (0 == rc)
+        {
+            // send a dirinfo message - will send an error message on a NULL lg_dir
+            send_dir_info(d->port, d->port_owner, lg_dir);
+        }
+        else
+        {
+            send_rc(d->port, d->port_owner, rc);
+        }
+
+        // Let caller know that the operation is in progress
+        // Outbuf is: <<0:32>>
+        RETURN_INT(0, outbuf);
+    }
+
 
     }
     *outbuf = 0;
@@ -1271,6 +1314,21 @@ static void get_info(int target, void* values, BinHelper* bh)
         }
         break;
     }
+    case SYSP_LOG_DIR_GET:
+    {
+        const char* dir = 0;
+        // Get the log dir - according to BDB docs, if not set
+        // the DB_HOME is used.
+        int rc = G_DB_ENV->get_lg_dir(G_DB_ENV, &dir);
+        if (NULL == dir)
+        {
+            dir = getenv("DB_HOME");
+        }
+        bin_helper_init(bh);
+        bin_helper_push_int32(bh, rc);
+        bin_helper_push_string(bh, dir);
+        break;
+    }
     }
 }
 
@@ -1325,6 +1383,53 @@ static char *rc_to_atom_str(int rc)
             default:                  return NULL;
         }
     }
+}
+
+
+// Send a {dirinfo, Path, FsId, MbyteAvail} message to pid given.
+// Send an {errno, Reason} on failure
+// returns 0 on success, errno on failure
+static int send_dir_info(ErlDrvPort port, ErlDrvTermData pid, const char *path)
+{
+    struct statvfs svfs;
+    int rc;
+
+    if (NULL == path)
+    {
+        rc = EINVAL;
+    }
+    else if (0 != statvfs(path, &svfs))
+    {
+        rc = errno;
+    }
+    else
+    {
+        rc = 0;
+    }
+
+    if (0 != rc)
+    {
+        send_rc(port, pid, rc);
+    }
+    else
+    {
+        fsblkcnt_t blocks_per_mbyte = 1024 * 1024 / svfs.f_frsize;
+        assert(blocks_per_mbyte > 0);
+        unsigned int mbyte_avail = (unsigned int) (svfs.f_bavail / blocks_per_mbyte);
+        int path_len = strlen(path);
+
+        ErlDrvTermData response[] = { ERL_DRV_ATOM,  driver_mk_atom("dirinfo"),
+                                      ERL_DRV_STRING, (ErlDrvTermData) path, path_len,
+                                      // send fsid as a binary as will only be used
+                                      // to compare which physical filesystem is on
+                                      // and the definintion varies between platforms.
+                                      ERL_DRV_BUF2BINARY, (ErlDrvTermData) &svfs.f_fsid, 
+                                                          sizeof(svfs.f_fsid),
+                                      ERL_DRV_UINT, mbyte_avail,
+                                      ERL_DRV_TUPLE, 4};
+        driver_send_term(port, pid, response, sizeof(response) / sizeof(response[0]));
+    }
+    return rc;
 }
 
 
@@ -2333,6 +2438,71 @@ static void do_async_txn_stat(void* arg)
         free(tsp);
     }
 }
+
+
+static void do_sync_data_dirs_info(PortData *d)
+{
+    // Get DB_HOME and find the real path
+    const char *db_home = NULL;
+    const char *data_dir = NULL;
+    const char **data_dirs = NULL;
+    char db_home_realpath[PATH_MAX+1];
+    char data_dir_realpath[PATH_MAX+1];
+    int got_db_home = 0;
+
+    // Lookup the environment and add it if not explicitly included in the data_dirs
+    int rc = G_DB_ENV->get_home(G_DB_ENV, &db_home);
+    if (rc != 0 || NULL == db_home)
+    {
+        // If no db_home we'll have to rely on whatever the global environment is configured with
+        got_db_home = 1;
+    }
+    else
+    {
+        if (NULL == realpath(db_home, db_home_realpath))
+            rc = errno;
+    }
+
+    // Get the data first
+    rc = G_DB_ENV->get_data_dirs(G_DB_ENV, &data_dirs);
+    int i;
+    for (i = 0; 0 == rc && NULL != data_dirs && NULL != data_dirs[i]; i++)
+    {
+        data_dir = data_dirs[i];
+
+        if (!got_db_home)
+        {
+            // Get the real path of the data dir
+            if (NULL == realpath(data_dir, data_dir_realpath))
+            {
+                rc = errno;
+            }
+            else
+            {
+                // Set got_db_home if it matches
+                if (0 == strcmp(data_dir_realpath, db_home_realpath))
+                {
+                    got_db_home = 1;
+                }
+            }
+        }
+        
+        if (0 == rc)
+        {
+            rc = send_dir_info(d->port, d->port_owner, data_dir);
+        }
+    }
+
+    // BDB always searches the environment home too so add it to the list
+    if (!got_db_home && rc == 0)
+    {
+        rc = send_dir_info(d->port, d->port_owner, db_home);
+    }
+
+    // Send the return code - will termiante the receive loop in bdberl.erl
+    send_rc(d->port, d->port_owner, rc);
+}
+
 
 static void* zalloc(unsigned int size)
 {
