@@ -548,7 +548,6 @@ transaction(Fun, Retries, Opts) ->
         ok ->
             try Fun() of
                 abort ->
-                    error_logger:info_msg("function requested abort"),
                     ok = txn_abort(),
                     {error, transaction_aborted};
 
@@ -568,7 +567,6 @@ transaction(Fun, Retries, Opts) ->
                     transaction(Fun, R);
 
                 _ : Reason ->
-                    error_logger:info_msg("function threw non-lock error - ~p", [Reason]),
                     ok = txn_abort(),
                     {error, {transaction_failed, Reason}}
             end;
