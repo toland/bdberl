@@ -140,28 +140,35 @@ open(Name, Type) ->
 %% @spec open(Name, Type, Opts) -> {ok, Db} | {error, Error}
 %% where
 %%    Name = string()
-%%    Type = btree | hash
+%%    Type = btree | hash | unknown
 %%    Opts = [atom()]
 %%    Db = integer()
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec open(Name :: db_name(), Type :: db_type(), Opts :: db_flags()) ->
+-spec open(Name :: db_name(), Type :: db_type() | unknown, Opts :: db_flags()) ->
     {ok, db()} | {error, integer()}.
 
 open(Name, Type, Opts) ->
     % Map database type into an integer code
     case Type of
         btree -> TypeCode = ?DB_TYPE_BTREE;
-        hash  -> TypeCode = ?DB_TYPE_HASH
+        hash  -> TypeCode = ?DB_TYPE_HASH;
+        unknown -> TypeCode = ?DB_TYPE_UNKNOWN %% BDB automatically determines if file exists
     end,
     Flags = process_flags(lists:umerge(Opts, [auto_commit, threaded])),
     Cmd = <<Flags:32/native, TypeCode:8/signed-native, (list_to_binary(Name))/bytes, 0:8/native>>,
-    case erlang:port_control(get_port(), ?CMD_OPEN_DB, Cmd) of
-        <<?STATUS_OK:8, Db:32/signed-native>> ->
-            {ok, Db};
-        <<?STATUS_ERROR:8, Errno:32/signed-native>> ->
-            {error, Errno}
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_OPEN_DB, Cmd),
+    case decode_rc(Rc) of
+        ok ->
+            receive 
+                {ok, DbRef} ->
+                    {ok, DbRef};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Error ->
+            {error, Error}
     end.
 
 
@@ -226,9 +233,14 @@ close(Db, Opts) ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CLOSE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
-            ok;
-        Reason ->
-            {error, Reason}
+            receive 
+                ok ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Error ->
+            {error, Error}
     end.
 
 
@@ -339,7 +351,11 @@ txn_begin(Opts) ->
     Cmd = <<Flags:32/native>>,
     <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
     case decode_rc(Result) of
-        ok -> ok;
+        ok -> 
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, decode_rc(Reason)}
+            end;
         Error -> {error, Error}
     end.
 
@@ -1060,7 +1076,11 @@ cursor_open(Db) ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_OPEN, Cmd),
     case decode_rc(Rc) of
         ok ->
-            ok;
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, Reason}
+            end;
+
         Reason ->
             {error, Reason}
     end.
@@ -1166,7 +1186,10 @@ cursor_close() ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
     case decode_rc(Rc) of
         ok ->
-            ok;
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, Reason}
+            end;
         Reason ->
             {error, Reason}
     end.
@@ -1199,7 +1222,10 @@ delete_database(Filename) ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
-            ok;
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, decode_rc(Reason)}
+            end;
         Reason ->
             {error, Reason}
     end.
@@ -2008,6 +2034,7 @@ get_port() ->
 %%
 %% Decode a integer return value into an atom representation
 %%
+decode_rc(Rc) when is_atom(Rc)       -> Rc;
 decode_rc(?ERROR_NONE)               -> ok;
 decode_rc(?ERROR_ASYNC_PENDING)      -> async_pending;
 decode_rc(?ERROR_INVALID_DBREF)      -> invalid_db;
