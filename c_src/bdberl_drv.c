@@ -193,9 +193,15 @@ static TPool* G_TPOOL_TXNS    = NULL;
     }}
 
 #define FAIL_IF_TXN_OPEN(d, outbuf) {                           \
-    if (d->txn)                                                 \
+        if (NULL != d->txn)                                     \
     {                                                           \
         send_rc(d->port, d->port_owner, ERROR_TXN_OPEN);        \
+        RETURN_INT(0, outbuf);                                  \
+    }}
+#define FAIL_IF_NO_TXN(d, outbuf) {                             \
+        if (NULL == d->txn)                                     \
+    {                                                           \
+        send_rc(d->port, d->port_owner, ERROR_NO_TXN);          \
         RETURN_INT(0, outbuf);                                  \
     }}
 
@@ -554,13 +560,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     case CMD_TXN_ABORT:
     {
         FAIL_IF_ASYNC_PENDING(d, outbuf);
-
-        // If we don't already have a txn open, fail
-        if (d->txn == 0)
-        {
-            send_rc(d->port, d->port_owner, ERROR_NO_TXN);
-            RETURN_INT(0, outbuf);
-        }
+        FAIL_IF_NO_TXN(d, outbuf);
 
         // Setup async command and schedule it on the txns threadpool
         d->async_op = cmd;

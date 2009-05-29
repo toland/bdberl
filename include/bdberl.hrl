@@ -37,9 +37,9 @@
 -define(CMD_TXN_STAT,        29).
 -define(CMD_TXN_STAT_PRINT,  30).
 
--define(DB_TYPE_UNKNOWN, 0).
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).
+-define(DB_TYPE_UNKNOWN, 5).
 
 -define(SYSP_CACHESIZE_GET,   1).
 -define(SYSP_TXN_TIMEOUT_GET, 2).
