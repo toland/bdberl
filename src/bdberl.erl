@@ -463,6 +463,7 @@ txn_abort() ->
         ok ->
             receive
                 ok -> ok;
+                {error, no_txn} -> ok;
                 {error, Reason} -> {error, decode_rc(Reason)}
             end;
 
@@ -540,13 +541,14 @@ transaction(Fun, Retries) ->
     {ok, db_value()} | db_txn_error().
 
 transaction(_Fun, 0, _Opts) ->
-    ok = txn_abort(),
     {error, {transaction_failed, retry_limit_reached}};
+
 transaction(Fun, Retries, Opts) ->
     case txn_begin(Opts) of
         ok ->
             try Fun() of
                 abort ->
+                    error_logger:info_msg("function requested abort"),
                     ok = txn_abort(),
                     {error, transaction_aborted};
 
@@ -566,6 +568,7 @@ transaction(Fun, Retries, Opts) ->
                     transaction(Fun, R);
 
                 _ : Reason ->
+                    error_logger:info_msg("function threw non-lock error - ~p", [Reason]),
                     ok = txn_abort(),
                     {error, {transaction_failed, Reason}}
             end;
