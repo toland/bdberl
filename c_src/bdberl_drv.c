@@ -353,6 +353,10 @@ DRIVER_INIT(bdberl_drv)
         G_LOG_PORT   = 0;
         G_LOG_PID    = 0;
     }
+    else
+    {
+        DBG("DRIVER INIT FAILED - %s\r\n", db_strerror(G_DB_ENV_ERROR));
+    }
 
     return &bdberl_drv_entry;
 }
@@ -461,8 +465,17 @@ static void bdberl_drv_stop(ErlDrvData handle)
 static void bdberl_drv_finish()
 {
     // Stop the thread pools
-    bdberl_tpool_stop(G_TPOOL_GENERAL);
-    bdberl_tpool_stop(G_TPOOL_TXNS);
+    if (NULL != G_TPOOL_GENERAL)
+    {
+        bdberl_tpool_stop(G_TPOOL_GENERAL);
+        G_TPOOL_GENERAL = NULL;
+    }
+
+    if (NULL != G_TPOOL_TXNS)
+    {
+        bdberl_tpool_stop(G_TPOOL_TXNS);
+        G_TPOOL_TXNS = NULL;
+    }
 
     // Signal the utility threads time is up
     G_TRICKLE_ACTIVE = 0;
@@ -470,28 +483,63 @@ static void bdberl_drv_finish()
     G_CHECKPOINT_ACTIVE = 0;
 
     // Close the writer fd on the pipe to signal finish to the utility threads
-    close(G_BDBERL_PIPE[1]);
-    G_BDBERL_PIPE[1] = -1;
+    if (-1 != G_BDBERL_PIPE[1])
+    {
+        close(G_BDBERL_PIPE[1]);
+        G_BDBERL_PIPE[1] = -1;
+    }
 
     // Wait for the deadlock checker to shutdown -- then wait for it
-    erl_drv_thread_join(G_DEADLOCK_THREAD, 0);
+    if (0 != G_DEADLOCK_THREAD)
+    {
+        erl_drv_thread_join(G_DEADLOCK_THREAD, 0);
+        G_DEADLOCK_THREAD = 0;
+    }
 
     // Wait for the checkpointer to shutdown -- then wait for it
-    erl_drv_thread_join(G_CHECKPOINT_THREAD, 0);
+    if (0 != G_CHECKPOINT_THREAD)
+    {
+        erl_drv_thread_join(G_CHECKPOINT_THREAD, 0);
+        G_CHECKPOINT_THREAD = 0;
+    }
 
     // Close the reader fd on the pipe now utility threads are closed
-    close(G_BDBERL_PIPE[0]);
+    if (-1 != G_BDBERL_PIPE[0])
+    {
+        close(G_BDBERL_PIPE[0]);
+    }
     G_BDBERL_PIPE[0] = -1;
 
     // Cleanup and shut down the BDB environment. Note that we assume
     // all ports have been released and thuse all databases/txns/etc are also gone.
-    G_DB_ENV->close(G_DB_ENV, 0);    
-    driver_free(G_DATABASES);
-    erl_drv_rwlock_destroy(G_DATABASES_RWLOCK);
-    hive_hash_destroy(G_DATABASES_NAMES);
+    if (NULL != G_DB_ENV)
+    {
+        G_DB_ENV->close(G_DB_ENV, 0);
+        G_DB_ENV = NULL;
+    }
+    if (NULL != G_DATABASES)
+    {
+        driver_free(G_DATABASES);
+        G_DATABASES = NULL;
+    }
+    if (NULL != G_DATABASES_RWLOCK)
+    {
+        erl_drv_rwlock_destroy(G_DATABASES_RWLOCK);
+        G_DATABASES_RWLOCK = NULL;
+    }
 
+    if (NULL != G_DATABASES_NAMES)
+    {
+        hive_hash_destroy(G_DATABASES_NAMES);
+        G_DATABASES_NAMES = NULL;
+    }
+    
     // Release the logging rwlock
-    erl_drv_rwlock_destroy(G_LOG_RWLOCK);
+    if (NULL != G_LOG_RWLOCK)
+    {
+        erl_drv_rwlock_destroy(G_LOG_RWLOCK);
+        G_LOG_RWLOCK = NULL;
+    }
 
     DBG("DRIVER_FINISH\n");
 }
