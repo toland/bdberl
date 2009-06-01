@@ -428,7 +428,7 @@ txn_commit(Opts) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
         Error ->
             {error, Error}
@@ -464,7 +464,7 @@ txn_abort() ->
             receive
                 ok -> ok;
                 {error, no_txn} -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
 
         no_txn ->
@@ -548,6 +548,7 @@ transaction(Fun, Retries, Opts) ->
         ok ->
             try Fun() of
                 abort ->
+                    error_logger:info_msg("function requested abort"),
                     ok = txn_abort(),
                     {error, transaction_aborted};
 
@@ -567,6 +568,7 @@ transaction(Fun, Retries, Opts) ->
                     transaction(Fun, R);
 
                 _ : Reason ->
+                    error_logger:info_msg("function threw non-lock error - ~p", [Reason]),
                     ok = txn_abort(),
                     {error, {transaction_failed, Reason}}
             end;
@@ -867,7 +869,7 @@ get(Db, Key, Opts) ->
             receive
                 {ok, _, Bin} -> {ok, binary_to_term(Bin)};
                 not_found -> not_found;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
         Error ->
             {error, Error}
@@ -1051,7 +1053,7 @@ truncate(Db) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
 
         Error ->
@@ -1228,7 +1230,7 @@ delete_database(Filename) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
         Reason ->
             {error, Reason}
@@ -1425,7 +1427,7 @@ stat(Db, Opts) ->
         ok ->
             receive
                 {error, Reason} ->
-                    {error, decode_rc(Reason)};
+                    {error, Reason};
                 {ok, Stats} ->
                     {ok, Stats}
             end;
@@ -1540,7 +1542,7 @@ lock_stat(Opts) ->
         ok ->
             receive
                 {error, Reason} ->
-                    {error, decode_rc(Reason)};
+                    {error, Reason};
                 {ok, Stats} ->
                     {ok, Stats}
             end;
@@ -1646,7 +1648,7 @@ log_stat(Opts) ->
         ok ->
             receive
                 {error, Reason} ->
-                    {error, decode_rc(Reason)};
+                    {error, Reason};
                 {ok, Stats} ->
                     {ok, Stats}
             end;
@@ -1837,7 +1839,7 @@ mutex_stat(Opts) ->
         ok ->
             receive
                 {error, Reason} ->
-                    {error, decode_rc(Reason)};
+                    {error, Reason};
                 {ok, Stats} ->
                     {ok, Stats}
             end;
