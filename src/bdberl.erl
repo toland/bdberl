@@ -40,7 +40,8 @@
          truncate/0, truncate/1,
          delete_database/1,
          cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0,
-         register_logger/0]).
+         register_logger/0,
+         stop/0]).
 
 -include("bdberl.hrl").
 
@@ -357,7 +358,7 @@ txn_begin(Opts) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
 
         Error ->
@@ -2065,6 +2066,27 @@ env_stat_print() ->
 register_logger() ->
     [] = erlang:port_control(get_port(), ?CMD_REGISTER_LOGGER, <<>>),
     ok.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Stop bdberl - stops the bdberl_logger process so that when
+%% all processes using bdberl terminate then the driver will be unloaded.
+%%
+%% @spec stop() -> ok
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stop() -> ok.
+
+stop() ->
+    %% Look for logging process -- make sure it's running and/or registered
+    case whereis(bdberl_logger) of
+        undefined ->
+            ok;
+        _ ->
+            ok = supervisor:terminate_child(kernel_safe_sup, bdberl_logger),
+            ok = supervisor:delete_child(kernel_safe_sup, bdberl_logger)
+    end.
 
 
 %% ====================================================================

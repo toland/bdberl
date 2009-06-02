@@ -41,7 +41,8 @@ all() ->
      mutex_stat_should_report_on_success,
      txn_stat_should_report_on_success,
      data_dirs_info_should_report_on_success,
-     lg_dir_info_should_report_on_success].
+     lg_dir_info_should_report_on_success,
+     start_after_stop_should_be_safe].
 
 
 
@@ -322,3 +323,34 @@ data_dirs_info_should_report_on_success(_Config) ->
 lg_dir_info_should_report_on_success(_Config) ->
     {ok, _LgDir, _Fsid, _MBytesAvail} = bdberl:get_lg_dir_info().
     
+%% Check the bdberl_logger gets reinstalled after stopping
+start_after_stop_should_be_safe(_Config) ->
+
+    %% Make sure bdberl_logger is running by using bdberl
+    Self = self(),
+    F = fun() ->
+                bdberl:log_stat(),
+                Self ! ok
+        end,
+    spawn(F),
+    receive
+        ok ->
+            ok
+    end,
+    {ok, Drivers} = erl_ddll:loaded_drivers(),
+    true = lists:keymember(bdberl_logger, 1, supervisor:which_children(kernel_safe_sup)),
+
+    %% Make sure bdberl_logger is really removed on stop
+    bdberl:stop(),
+    false = lists:keymember(bdberl_logger, 1, supervisor:which_children(kernel_safe_sup)),
+
+    %% A bdb operation to open the port and get it re-registered
+    spawn(F),
+    receive
+        ok ->
+            ok
+    end,
+    true = lists:keymember(bdberl_logger, 1, supervisor:which_children(kernel_safe_sup)),
+    ok.
+                
+
