@@ -31,7 +31,18 @@ all() ->
      delete_should_remove_file,
      delete_should_fail_if_db_inuse,
      truncate_should_empty_database,
-     truncate_all_should_empty_all_databases].
+     truncate_all_should_empty_all_databases,
+     btree_stat_should_report_on_success,
+     hash_stat_should_report_on_success,
+     stat_should_fail_on_bad_dbref,
+     lock_stat_should_report_on_success,
+     log_stat_should_report_on_success,
+     memp_stat_should_report_on_success,
+     mutex_stat_should_report_on_success,
+     txn_stat_should_report_on_success,
+     data_dirs_info_should_report_on_success,
+     lg_dir_info_should_report_on_success].
+
 
 
 dbconfig(Config) ->
@@ -237,3 +248,77 @@ truncate_all_should_empty_all_databases(Config) ->
     ok = bdberl:put(Db, mykey, avalue),
     ok = bdberl:truncate(),
     not_found = bdberl:get(Db, mykey).
+
+btree_stat_should_report_on_success(_Config) ->
+    {ok, Db} = bdberl:open("btree_stat.bdb", btree),
+    {ok, Stat} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    0 = proplists:get_value(nkeys, Stat),
+    0 = proplists:get_value(ndata, Stat),
+
+    %%  Put a record and check the number of records updates
+    ok = bdberl:put(Db, mykey, avalue),
+
+    {ok, Stat1} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    1 = proplists:get_value(nkeys, Stat1),
+    1 = proplists:get_value(ndata, Stat1),
+    done.
+
+
+hash_stat_should_report_on_success(_Config) ->
+    {ok, Db} = bdberl:open("hash_stat.bdb", hash),
+    {ok, Stat} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    0 = proplists:get_value(nkeys, Stat),
+    0 = proplists:get_value(ndata, Stat),
+
+    %%  Put a record and check the number of records updates
+    ok = bdberl:put(Db, mykey, avalue),
+
+    {ok, Stat1} = bdberl:stat(Db, []),
+    %% Check stats are zero on the new db
+    1 = proplists:get_value(nkeys, Stat1),
+    1 = proplists:get_value(ndata, Stat1),
+    done.
+    
+stat_should_fail_on_bad_dbref(_Config) ->
+    {error, invalid_db} = bdberl:stat(10000000, []),
+    done.
+
+lock_stat_should_report_on_success(_Config) ->
+    {ok, Stat} = bdberl:lock_stat([]),
+    %% Check a lock stat that that probably won't change
+    2147483647 = proplists:get_value(cur_maxid, Stat),
+    done.
+
+log_stat_should_report_on_success(_Config) ->
+    {ok, Stat} = bdberl:log_stat([]),
+    %% Check a log stat that that probably won't change
+    264584 = proplists:get_value(magic, Stat),
+    done.
+
+memp_stat_should_report_on_success(_Config) ->
+    {ok, Gstat, Fstat} = bdberl:memp_stat([]),
+    true = is_list(Fstat),
+    true = is_list(Gstat),
+    done.
+
+mutex_stat_should_report_on_success(_Config) ->
+    {ok, _Stat} = bdberl:mutex_stat([]),
+    done.
+
+txn_stat_should_report_on_success(_Config) ->
+    {ok, _GStat1, []} = bdberl:txn_stat([]),
+    bdberl:txn_begin(),
+    {ok, _GStat2, [_ATxnStat]} = bdberl:txn_stat([]),
+    bdberl:txn_abort(),
+    {ok, _GStat3, []} = bdberl:txn_stat([]),
+    done.
+
+data_dirs_info_should_report_on_success(_Config) ->
+    {ok, _DataDirs} = bdberl:get_data_dirs_info().
+
+lg_dir_info_should_report_on_success(_Config) ->
+    {ok, _LgDir, _Fsid, _MBytesAvail} = bdberl:get_lg_dir_info().
+    

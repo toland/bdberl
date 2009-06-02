@@ -13,7 +13,22 @@
          txn_commit/0, txn_commit/1, txn_abort/0,
          get_cache_size/0,
          get_data_dirs/0,
+         get_data_dirs_info/0,
+         get_lg_dir_info/0,
          get_txn_timeout/0,
+         stat/1, stat/2,
+         stat_print/1, stat_print/2,
+         lock_stat/0, lock_stat/1,
+         lock_stat_print/0, lock_stat_print/1,
+         log_stat/0, log_stat/1,
+         log_stat_print/0, log_stat_print/1,
+         memp_stat/0, memp_stat/1,
+         memp_stat_print/0, memp_stat_print/1,
+         mutex_stat/0, mutex_stat/1,
+         mutex_stat_print/0, mutex_stat_print/1,
+         txn_stat/0, txn_stat/1,
+         txn_stat_print/0, txn_stat_print/1,
+         env_stat_print/0, env_stat_print/1, 
          transaction/1, transaction/2, transaction/3,
          put/3, put/4,
          put_r/3, put_r/4,
@@ -35,10 +50,11 @@
 -type db_name() :: [byte(),...].
 -type db_type() :: btree | hash.
 -type db_flags() :: [atom()].
+-type db_fsid() :: binary().
 -type db_key() :: term().
+-type db_mbytes() :: non_neg_integer().
 -type db_value() :: term().
 -type db_ret_value() :: not_found | db_value().
-
 -type db_error_reason() :: atom() | {unknown, integer()}.
 -type db_error() :: {error, db_error_reason()}.
 
@@ -127,28 +143,35 @@ open(Name, Type) ->
 %% @spec open(Name, Type, Opts) -> {ok, Db} | {error, Error}
 %% where
 %%    Name = string()
-%%    Type = btree | hash
+%%    Type = btree | hash | unknown
 %%    Opts = [atom()]
 %%    Db = integer()
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec open(Name :: db_name(), Type :: db_type(), Opts :: db_flags()) ->
+-spec open(Name :: db_name(), Type :: db_type() | unknown, Opts :: db_flags()) ->
     {ok, db()} | {error, integer()}.
 
 open(Name, Type, Opts) ->
     % Map database type into an integer code
     case Type of
         btree -> TypeCode = ?DB_TYPE_BTREE;
-        hash  -> TypeCode = ?DB_TYPE_HASH
+        hash  -> TypeCode = ?DB_TYPE_HASH;
+        unknown -> TypeCode = ?DB_TYPE_UNKNOWN %% BDB automatically determines if file exists
     end,
     Flags = process_flags(lists:umerge(Opts, [auto_commit, threaded])),
     Cmd = <<Flags:32/native, TypeCode:8/signed-native, (list_to_binary(Name))/bytes, 0:8/native>>,
-    case erlang:port_control(get_port(), ?CMD_OPEN_DB, Cmd) of
-        <<?STATUS_OK:8, Db:32/signed-native>> ->
-            {ok, Db};
-        <<?STATUS_ERROR:8, Errno:32/signed-native>> ->
-            {error, Errno}
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_OPEN_DB, Cmd),
+    case decode_rc(Rc) of
+        ok ->
+            receive 
+                {ok, DbRef} ->
+                    {ok, DbRef};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Error ->
+            {error, Error}
     end.
 
 
@@ -213,9 +236,14 @@ close(Db, Opts) ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CLOSE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
-            ok;
-        Reason ->
-            {error, Reason}
+            receive 
+                ok ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Error ->
+            {error, Error}
     end.
 
 
@@ -331,6 +359,7 @@ txn_begin(Opts) ->
                 ok -> ok;
                 {error, Reason} -> {error, decode_rc(Reason)}
             end;
+
         Error ->
             {error, Error}
     end.
@@ -402,7 +431,7 @@ txn_commit(Opts) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
         Error ->
             {error, Error}
@@ -437,7 +466,8 @@ txn_abort() ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, no_txn} -> ok;
+                {error, Reason} -> {error, Reason}
             end;
 
         no_txn ->
@@ -514,13 +544,14 @@ transaction(Fun, Retries) ->
     {ok, db_value()} | db_txn_error().
 
 transaction(_Fun, 0, _Opts) ->
-    ok = txn_abort(),
     {error, {transaction_failed, retry_limit_reached}};
+
 transaction(Fun, Retries, Opts) ->
     case txn_begin(Opts) of
         ok ->
             try Fun() of
                 abort ->
+                    error_logger:info_msg("function requested abort"),
                     ok = txn_abort(),
                     {error, transaction_aborted};
 
@@ -540,6 +571,7 @@ transaction(Fun, Retries, Opts) ->
                     transaction(Fun, R);
 
                 _ : Reason ->
+                    error_logger:info_msg("function threw non-lock error - ~p", [Reason]),
                     ok = txn_abort(),
                     {error, {transaction_failed, Reason}}
             end;
@@ -840,7 +872,7 @@ get(Db, Key, Opts) ->
             receive
                 {ok, _, Bin} -> {ok, binary_to_term(Bin)};
                 not_found -> not_found;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
         Error ->
             {error, Error}
@@ -1024,7 +1056,7 @@ truncate(Db) ->
         ok ->
             receive
                 ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
+                {error, Reason} -> {error, Reason}
             end;
 
         Error ->
@@ -1053,7 +1085,11 @@ cursor_open(Db) ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_OPEN, Cmd),
     case decode_rc(Rc) of
         ok ->
-            ok;
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, Reason}
+            end;
+
         Reason ->
             {error, Reason}
     end.
@@ -1159,7 +1195,10 @@ cursor_close() ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
     case decode_rc(Rc) of
         ok ->
-            ok;
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, Reason}
+            end;
         Reason ->
             {error, Reason}
     end.
@@ -1192,7 +1231,10 @@ delete_database(Filename) ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
     case decode_rc(Rc) of
         ok ->
-            ok;
+            receive
+                ok -> ok;
+                {error, Reason} -> {error, Reason}
+            end;
         Reason ->
             {error, Reason}
     end.
@@ -1229,6 +1271,63 @@ get_data_dirs() ->
                     end
             end;
 
+        Reason ->
+            {error, Reason}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Returns the list of directories that bdberl searches to find databases
+%% with the number of megabytes available for each dir
+%%
+%% @spec get_data_dirs_info() -> {ok, [DirName, Fsid, MbytesAvail]} | {error, Error}
+%% where
+%%    DirName = string()
+%%    Fsid = binary()
+%%    MbytesAvail = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec get_data_dirs_info() -> {ok, [{string(), db_fsid(), db_mbytes()}]} | db_error().
+
+get_data_dirs_info() ->
+    % Call into the BDB library and get a list of configured data directories
+    Cmd = <<>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(),?CMD_DATA_DIRS_INFO, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            recv_dirs_info([]);
+        Reason ->
+            {error, Reason}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Returns the log directory info (name and megabytes available)
+%%
+%% @spec get_lg_dir_info() -> {ok, DirName, Fsid, MbytesAvail} | {error, Error}
+%% where
+%%    DirName = string()
+%%    Fsid = binary()
+%%    MbytesAvail = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec get_lg_dir_info() -> {ok, string(), db_fsid(), db_mbytes()} | db_error().
+get_lg_dir_info() ->
+    % Call into the BDB library and get the log dir and filesystem info
+    Cmd = <<>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_DIR_INFO, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {dirinfo, Path, FsId, MbytesAvail} ->
+                    {ok, Path, FsId, MbytesAvail};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
         Reason ->
             {error, Reason}
     end.
@@ -1286,6 +1385,670 @@ get_txn_timeout() ->
             {error, decode_rc(Result)}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve database stats
+%%
+%% This function retrieves database statistics 
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>fast_stat</dt>
+%%   <dd>Return only the values which do not require traversal of the database. 
+%%       Among  other things, this flag makes it possible for applications to
+%%       request key and record counts without incurring the performance 
+%%       penalty of traversing the entire database.</dd>
+%%   <dt>read_committed</dt>
+%%   <dd>Database items read during a transactional call will have degree 2 
+%%       isolation. This ensures the stability of the data items read during
+%%       the stat operation but permits that data to be modified or deleted by
+%%       other transactions prior to the commit of the specified 
+%%       transaction.</dd>
+%%   <dt>read_uncommitted</dt>
+%%   <dd>Database items read during a transactional call will have degree 1 
+%%       isolation, including modified but not yet committed data. Silently 
+%%       ignored if the read_committed flag was not specified when the 
+%%       underlying database was opened.</dd>
+%% </dl>
+%%
+%% @spec stat(Db, Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Db = integer()
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat(Db :: db(), Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+stat(Db, Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Db:32/signed-native, Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_DB_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {error, Reason} ->
+                    {error, Reason};
+                {ok, Stats} ->
+                    {ok, Stats}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve database stats with empty flags
+%%
+%% @spec stat(Db) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Db = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+stat(Db) ->
+    stat(Db, []).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print database stats
+%%
+%% This function prints statistics from the database to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>fast_stat</dt>
+%%   <dd>Return only the values which do not require traversal of the database. 
+%%       Among  other things, this flag makes it possible for applications to
+%%       request key and record counts without incurring the performance 
+%%       penalty of traversing the entire database.</dd>
+%%   <dt>read_committed</dt>
+%%   <dd>Database items read during a transactional call will have degree 2 
+%%       isolation. This ensures the stability of the data items read during
+%%       the stat operation but permits that data to be modified or deleted by
+%%       other transactions prior to the commit of the specified transaction.
+%%       </dd>
+%%   <dt>read_uncommitted</dt>
+%%   <dd>Database items read during a transactional call will have degree 1 
+%%       isolation, including modified but not yet committed data. Silently 
+%%       ignored if the read_committed flag was not specified when the 
+%%       underlying database was opened.</dd>
+%% </dl>
+%%
+%% @spec stat_print(Db, Opts) -> ok | {error, Error}
+%% where
+%%    Db = integer()
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat_print(Db :: db(), Opts :: db_flags()) ->
+    ok | db_error().
+stat_print(Db, Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Db:32/signed-native, Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_DB_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print database stats with empty flags
+%%
+%% @spec stat_print(Db) -> ok | {error, Error}
+%% where
+%%    Db = integer()
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec stat_print(Db :: db()) ->
+    ok | db_error().
+stat_print(Db) ->
+    stat_print(Db, []).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve lock stats
+%%
+%% This function retrieves lock statistics from the database.
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec lock_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+lock_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOCK_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {error, Reason} ->
+                    {error, Reason};
+                {ok, Stats} ->
+                    {ok, Stats}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve lock stats with no flags
+%%
+%% @spec lock_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+lock_stat() ->
+    lock_stat([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print lock stats
+%%
+%% This function prints lock statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%%   <dt>stat_lock_conf</dt>
+%%   <dd>Display the lock conflict matrix.</dd>
+%%   <dt>stat_lock_lockers</dt>
+%%   <dd>Display the lockers within hash chains.</dd>
+%%   <dt>stat_lock_objects</dt>
+%%   <dd>Display the lock objects within hash chains.</dd>
+%%   <dt>stat_lock_params</dt>
+%%   <dd>Display the locking subsystem parameters.</dd>
+%% </dl>
+%%
+%% @spec lock_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+lock_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOCK_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print lock stats with empty flags
+%%
+%% @spec lock_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec lock_stat_print() ->
+    ok | db_error().
+lock_stat_print() ->
+    lock_stat_print([]).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve log stats
+%%
+%% This function retrieves bdb log statistics
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec log_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+log_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {error, Reason} ->
+                    {error, Reason};
+                {ok, Stats} ->
+                    {ok, Stats}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve log stats with empty flags
+%%
+%% @spec log_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+log_stat() ->
+    log_stat([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print log stats
+%%
+%% This function prints bdb log statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%% </dl>
+%%
+%% @spec log_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+log_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print log stats with empty flags
+%%
+%% @spec log_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec log_stat_print() ->
+    ok | db_error().
+log_stat_print() ->
+    log_stat_print([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve memory pool stats
+%%
+%% This function retrieves bdb mpool statistics
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec memp_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+memp_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MEMP_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            recv_memp_stat([]);
+        Error ->
+            {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve memory pool stats with empty flags
+%%
+%% @spec memp_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+memp_stat() ->
+    memp_stat([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print memory pool stats
+%%
+%% This function prints bdb mpool statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%%   <dt>stat_memp_hash</dt>
+%%   <dd>Display the buffers with hash chains.</dd>
+%% </dl>
+%%
+%% @spec memp_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+memp_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MEMP_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print memory pool stats with empty flags
+%%
+%% @spec memp_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec memp_stat_print() ->
+    ok | db_error().
+memp_stat_print() ->
+    memp_stat_print([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve mutex stats
+%%
+%% This function retrieves mutex statistics
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec mutex_stat(Opts) -> {ok, [{atom(), number()}]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec mutex_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}]} | db_error().
+
+mutex_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MUTEX_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            receive
+                {error, Reason} ->
+                    {error, Reason};
+                {ok, Stats} ->
+                    {ok, Stats}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve mutex stats with empty flags
+%%
+%% @spec mutex_stat() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec mutex_stat() ->
+    {ok, [{atom(), number()}]} | db_error().
+mutex_stat() ->
+    mutex_stat([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print mutex stats
+%%
+%% This function prints mutex statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%% </dl>
+%%
+%% @spec mutex_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec mutex_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+mutex_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MUTEX_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print mutex stats with empty flags
+%%
+%% @spec mutex_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec mutex_stat_print() ->
+    ok | db_error().
+mutex_stat_print() ->
+    mutex_stat_print([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve transaction stats
+%%
+%% This function retrieves transaction statistics
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after returning their values</dd>
+%% </dl>
+%%
+%% @spec txn_stat(Opts) -> {ok, [{atom(), number()}], [[{atom(), number()}]]} | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat(Opts :: db_flags()) ->
+    {ok, [{atom(), number()}], [[{atom(), number()}]]} | db_error().
+
+txn_stat(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_STAT, Cmd),
+    case decode_rc(Result) of
+        ok ->
+            recv_txn_stat([]);
+        Error ->
+            {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve transaction stats with empty flags
+%%
+%% @spec txn_stat() -> {ok, [{atom(), number()}], [[{atom(), number()}]]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat() ->
+    {ok, [{atom(), number()}], [[{atom(), number()}]]} | db_error().
+txn_stat() ->
+    txn_stat([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print transaction stats
+%%
+%% This function prints transaction statistics to wherever
+%% BDB messages are being sent
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%% </dl>
+%%
+%% @spec txn_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+txn_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print transaction stats with empty flags
+%%
+%% @spec txn_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec txn_stat_print() ->
+    ok | db_error().
+txn_stat_print() ->
+    txn_stat_print([]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print environment stats
+%%
+%% This function prints environment statistics to wherever
+%% BDB messages are being sent.  There is no documented way
+%% to get this programatically
+%%
+%% === Options ===
+%%
+%% <dl>
+%%   <dt>stat_all</dt>
+%%   <dd>Display all available information.</dd>
+%%   <dt>stat_clear</dt>
+%%   <dd>Reset statistics after displaying their values.</dd>
+%%   <dt>stat_subsystem</dt>
+%%   <dd>Display information for all configured subsystems.</dd>
+%% </dl>
+%%
+%% @spec env_stat_print(Opts) -> ok | {error, Error}
+%% where
+%%    Opts = [atom()]
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec env_stat_print(Opts :: db_flags()) ->
+    ok | db_error().
+env_stat_print(Opts) ->
+    Flags = process_flags(Opts),
+    Cmd = <<Flags:32/native>>,
+    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_ENV_STAT_PRINT, Cmd),
+    case decode_rc(Result) of
+        ok -> ok;
+        Error -> {error, Error}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Print environment stats with empty flags
+%%
+%% @spec env_stat_print() -> ok | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec env_stat_print() ->
+    ok | db_error().
+env_stat_print() ->
+    env_stat_print([]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1337,6 +2100,7 @@ get_port() ->
 %%
 %% Decode a integer return value into an atom representation
 %%
+decode_rc(Rc) when is_atom(Rc)       -> Rc;
 decode_rc(?ERROR_NONE)               -> ok;
 decode_rc(?ERROR_ASYNC_PENDING)      -> async_pending;
 decode_rc(?ERROR_INVALID_DBREF)      -> invalid_db;
@@ -1385,6 +2149,7 @@ flag_value(Flag) ->
         consume_wait     -> ?DB_CONSUME_WAIT;
         create           -> ?DB_CREATE;
         exclusive        -> ?DB_EXCL;
+        fast_stat        -> ?DB_FAST_STAT;
         get_both         -> ?DB_GET_BOTH;
         ignore_lease     -> ?DB_IGNORE_LEASE;
         multiple         -> ?DB_MULTIPLE;
@@ -1398,6 +2163,14 @@ flag_value(Flag) ->
         readonly         -> ?DB_RDONLY;
         rmw              -> ?DB_RMW;
         set_recno        -> ?DB_SET_RECNO;
+        stat_all         -> ?DB_STAT_ALL;
+        stat_clear       -> ?DB_STAT_CLEAR;
+        stat_lock_conf   -> ?DB_STAT_LOCK_CONF;
+        stat_lock_lockers -> ?DB_STAT_LOCK_LOCKERS;
+        stat_lock_objects -> ?DB_STAT_LOCK_OBJECTS;
+        stat_lock_params  -> ?DB_STAT_LOCK_PARAMS;
+        stat_memp_hash    -> ?DB_STAT_MEMP_HASH;
+        stat_subsystem   -> ?DB_STAT_SUBSYSTEM;
         threaded         -> ?DB_THREAD;
         truncate         -> ?DB_TRUNCATE;
         txn_no_sync      -> ?DB_TXN_NOSYNC;
@@ -1462,3 +2235,44 @@ split_bin(Delimiter, <<Delimiter:8, Rest/binary>>, ItemAcc, Acc) ->
     split_bin(Delimiter, Rest, <<>> ,[ItemAcc | Acc]);
 split_bin(Delimiter, <<Other:8, Rest/binary>>, ItemAcc, Acc) ->
     split_bin(Delimiter, Rest, <<ItemAcc/binary, Other:8>>, Acc).
+
+
+%%
+%% Receive memory pool stats
+%%
+recv_memp_stat(Fstats) ->
+    receive
+        {error, Reason} ->
+            {error, decode_rc(Reason)};
+        {fstat, Fstat} ->
+            recv_memp_stat([Fstat|Fstats]);
+        {ok, Stats} ->
+            {ok, Stats, Fstats}
+    end.
+
+%%
+%% Receive transaction stats
+%%
+recv_txn_stat(Tstats) ->
+    receive
+        {error, Reason} ->
+            {error, decode_rc(Reason)};
+        {txn, Tstat} ->
+            recv_txn_stat([Tstat|Tstats]);
+        {ok, Stats} ->
+            {ok, Stats, Tstats}
+    end.
+
+%%
+%% Receive directory info messages until ok
+%%
+recv_dirs_info(DirInfos) ->
+    receive
+        {dirinfo, Path, FsId, MbytesAvail} ->
+            recv_dirs_info([{Path, FsId, MbytesAvail} | DirInfos]);
+        {error, Reason} ->
+            {error, Reason};
+        ok ->
+            {ok, DirInfos}
+    end.
+    

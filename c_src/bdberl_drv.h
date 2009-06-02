@@ -46,6 +46,21 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define CMD_REMOVE_DB       15
 #define CMD_TRUNCATE        16
 #define CMD_REGISTER_LOGGER 17
+#define CMD_DB_STAT         18
+#define CMD_DB_STAT_PRINT   19
+#define CMD_ENV_STAT_PRINT  20
+#define CMD_LOCK_STAT       21
+#define CMD_LOCK_STAT_PRINT 22
+#define CMD_LOG_STAT        23
+#define CMD_LOG_STAT_PRINT  24
+#define CMD_MEMP_STAT       25
+#define CMD_MEMP_STAT_PRINT 26
+#define CMD_MUTEX_STAT       27
+#define CMD_MUTEX_STAT_PRINT 28
+#define CMD_TXN_STAT         29
+#define CMD_TXN_STAT_PRINT   30
+#define CMD_DATA_DIRS_INFO   31
+#define CMD_LOG_DIR_INFO     32
 
 /**
  * Command status values
@@ -74,7 +89,8 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define ERROR_CURSOR_OPEN   (-29005) /* Cursor already active on this port */
 #define ERROR_NO_CURSOR     (-29006) /* No cursor open on this port */
 #define ERROR_DB_ACTIVE     (-29007) /* Database is currently active; operation requires otherwise */
-
+#define ERROR_INVALID_CMD   (-29008) /* Invalid command code requested */
+#define ERROR_INVALID_DB_TYPE  (-29009) /* Invalid database type */
 
 /**
  * System information ids
@@ -82,6 +98,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define SYSP_CACHESIZE_GET               1
 #define SYSP_TXN_TIMEOUT_GET             2
 #define SYSP_DATA_DIR_GET                3
+#define SYSP_LOG_DIR_GET                 4
 
 /** 
  * Driver Entry

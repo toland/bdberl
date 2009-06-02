@@ -44,6 +44,10 @@ void bin_helper_push_int32(BinHelper* bh, int value)
 
 void bin_helper_push_string(BinHelper* bh, const char* string)
 {
+    if (NULL == string)
+    {
+        string = "<null>";
+    }
     int sz = strlen(string);
     bin_helper_check_size(bh, sz+1);
     strncpy(bh->bin->orig_bytes+(bh->offset), string, sz+1);
