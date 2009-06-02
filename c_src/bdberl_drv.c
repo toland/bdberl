@@ -232,8 +232,9 @@ DRIVER_INIT(bdberl_drv)
         DB_THREAD;              /* Make the environment free-threaded */
 
     // Check for environment flag which indicates we want to use DB_SYSTEM_MEM
-    char* use_system_mem = getenv("BDBERL_SYSTEM_MEM");
-    if (use_system_mem != 0)
+    char value[1];
+    size_t value_size = sizeof(value);
+    if (erl_drv_getenv("BDBERL_SYSTEM_MEM", value, &value_size) >= 0)
     {
         flags |= DB_SYSTEM_MEM;
     }
@@ -266,9 +267,11 @@ DRIVER_INIT(bdberl_drv)
         // Use the BDBERL_MAX_DBS environment value to determine the max # of
         // databases to permit the VM to open at once. Defaults to 1024.
         G_DATABASES_SIZE = 1024;
-        char* max_dbs_str = getenv("BDBERL_MAX_DBS"); /* TODO: Use erl_drv_getenv */
-        if (max_dbs_str != 0)
+        char max_dbs_str[64];
+        value_size = sizeof(max_dbs_str);
+        if (erl_drv_getenv("BDBERL_MAX_DBS", max_dbs_str, &value_size) >= 0)
         {
+            assert(value_size < sizeof(max_dbs_str));
             G_DATABASES_SIZE = atoi(max_dbs_str);
             if (G_DATABASES_SIZE <= 0)
             {
@@ -278,9 +281,11 @@ DRIVER_INIT(bdberl_drv)
 
         // Use the BDBERL_TRICKLE_TIME and BDBERL_TRICKLE_PERCENTAGE to control how often
         // the trickle writer runs and what percentage of pages should be flushed.
-        char* trickle_time_str = getenv("BDBERL_TRICKLE_TIME");
-        if (trickle_time_str != 0)
+        char trickle_time_str[64];
+        value_size = sizeof(trickle_time_str);
+        if (erl_drv_getenv("BDBERL_TRICKLE_TIME", trickle_time_str, &value_size) >= 0)
         {
+            assert(value_size < sizeof(trickle_time_str));
             G_TRICKLE_INTERVAL = atoi(trickle_time_str);
             if (G_TRICKLE_INTERVAL <= 0)
             {
@@ -288,9 +293,12 @@ DRIVER_INIT(bdberl_drv)
             }
         }
 
-        char* trickle_percentage_str = getenv("BDBERL_TRICKLE_PERCENTAGE");
-        if (trickle_percentage_str != 0)
+        char trickle_percentage_str[64];
+        value_size = sizeof(trickle_percentage_str);
+        if (erl_drv_getenv("BDBERL_TRICKLE_PERCENTAGE", trickle_percentage_str, &value_size) >= 0)
         {
+            assert(value_size < sizeof(trickle_percentage_str));
+
             G_TRICKLE_PERCENTAGE = atoi(trickle_percentage_str);
             if (G_TRICKLE_PERCENTAGE <= 0)
             {
@@ -299,9 +307,12 @@ DRIVER_INIT(bdberl_drv)
         }
 
         // Initialize default page size
-        char* page_size_str = getenv("BDBERL_PAGE_SIZE");
-        if (page_size_str != 0)
+        char page_size_str[64];
+        value_size = sizeof(page_size_str);
+        if (erl_drv_getenv("BDBERL_PAGE_SIZE", page_size_str, &value_size) >= 0)
         {
+            assert(value_size < sizeof(page_size_str));
+
             // Convert to integer and only set it if it is a power of 2.
             unsigned int page_size = atoi(page_size_str);
             if (page_size != 0 && ((page_size & (~page_size +1)) == page_size))
@@ -329,9 +340,12 @@ DRIVER_INIT(bdberl_drv)
 
         // Use the BDBERL_CHECKPOINT_TIME environment value to determine the
         // interval between transaction checkpoints. Defaults to 1 hour.
-        char* cp_int_str = getenv("BDBERL_CHECKPOINT_TIME"); /* TODO: Use erl_drv_getenv */
-        if (cp_int_str != 0)
+        char cp_int_str[64];
+        value_size = sizeof(cp_int_str);
+        if (erl_drv_getenv("BDBERL_CHECKPOINT_TIME", cp_int_str, &value_size) >= 0)
         {
+            assert(value_size < sizeof(cp_int_str));
+
             G_CHECKPOINT_INTERVAL = atoi(cp_int_str);
             if (G_CHECKPOINT_INTERVAL <= 0)
             {
@@ -1370,11 +1384,14 @@ static void get_info(int target, void* values, BinHelper* bh)
         int rc = G_DB_ENV->get_lg_dir(G_DB_ENV, &dir);
         if (NULL == dir)
         {
-            dir = getenv("DB_HOME");
+            if (0 != G_DB_ENV->get_home(G_DB_ENV, &dir))
+            {
+                dir = NULL;
+            }
         }
         bin_helper_init(bh);
         bin_helper_push_int32(bh, rc);
-        bin_helper_push_string(bh, dir);
+        bin_helper_push_string(bh, dir); // Will convert NULL pointer to "<null>"
         break;
     }
     }
@@ -2188,11 +2205,13 @@ static void do_async_txnop(void* arg)
     }
     else if (d->async_op == CMD_TXN_COMMIT)
     {
+        assert(NULL != d->txn);
         rc = d->txn->commit(d->txn, d->async_flags);
         d->txn = 0;
     }
     else 
     {
+        assert(NULL != d->txn);
         rc = d->txn->abort(d->txn);
         d->txn = 0;
     }
