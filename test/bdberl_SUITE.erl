@@ -337,7 +337,6 @@ start_after_stop_should_be_safe(_Config) ->
         ok ->
             ok
     end,
-    {ok, Drivers} = erl_ddll:loaded_drivers(),
     true = lists:keymember(bdberl_logger, 1, supervisor:which_children(kernel_safe_sup)),
 
     %% Make sure bdberl_logger is really removed on stop
