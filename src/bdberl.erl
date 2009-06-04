@@ -871,7 +871,15 @@ get(Db, Key, Opts) ->
     case decode_rc(Result) of
         ok ->
             receive
-                {ok, _, Bin} -> {ok, binary_to_term(Bin)};
+                {ok, _, Bin} ->
+                    <<Crc:32/native, Payload/binary>> = Bin,
+                    case erlang:crc32(Payload) of
+                        Crc ->
+                            {ok, binary_to_term(Payload)};
+                        CrcOther ->
+                            error_logger:warning_msg("Invalid CRC: ~p ~p\n", [Crc, CrcOther]),
+                            {error, invalid_crc}
+                    end;
                 not_found -> not_found;
                 {error, Reason} -> {error, Reason}
             end;
@@ -2209,9 +2217,14 @@ flag_value(Flag) ->
 %%
 do_put(Action, Db, Key, Value, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
-    {ValLen, ValBin} = to_binary(Value),
+    {_, ValBin} = to_binary(Value),
+    {_, ValBin} = to_binary(Value),
+    Crc = erlang:crc32(ValBin),
+    FinalValBin = <<Crc:32/native, ValBin/binary>>,
+    FinalValBinLen = size(FinalValBin),
     Flags = process_flags(Opts),
-    Cmd = <<Db:32/signed-native, Flags:32/native, KeyLen:32/native, KeyBin/bytes, ValLen:32/native, ValBin/bytes>>,
+    Cmd = <<Db:32/signed-native, Flags:32/native, KeyLen:32/native, KeyBin/bytes,
+           FinalValBinLen:32/native, FinalValBin/bytes>>,
     <<Result:32/signed-native>> = erlang:port_control(get_port(), Action, Cmd),
     case decode_rc(Result) of
         ok ->
@@ -2234,7 +2247,14 @@ do_cursor_move(Direction) ->
         ok ->
             receive
                 {ok, KeyBin, ValueBin} ->
-                    {ok, binary_to_term(KeyBin), binary_to_term(ValueBin)};
+                    <<Crc:32/native, Payload/binary>> = ValueBin,
+                    case erlang:crc32(Payload) of
+                        Crc ->
+                            {ok, binary_to_term(KeyBin), binary_to_term(Payload)};
+                        CrcOther ->
+                            error_logger:warning_msg("Invalid CRC on cursor: ~p ~p\n", [Crc, CrcOther]),
+                            {error, invalid_crc}
+                    end;
                 not_found ->
                     not_found;
                 {error, ReasonCode} ->

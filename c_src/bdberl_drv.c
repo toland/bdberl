@@ -1424,12 +1424,17 @@ static char *rc_to_atom_str(int rc)
         switch (rc)
         {
             // bdberl driver errors
+            case ERROR_MAX_DBS:       return "max_dbs";
             case ERROR_ASYNC_PENDING: return "async_pending";
             case ERROR_INVALID_DBREF: return "invalid_db";
             case ERROR_TXN_OPEN:      return "transaction_open";
             case ERROR_NO_TXN:        return "no_txn";
             case ERROR_CURSOR_OPEN:   return "cursor_open";
             case ERROR_NO_CURSOR:     return "no_cursor";
+            case ERROR_DB_ACTIVE:     return "db_active";
+            case ERROR_INVALID_CMD:   return "invalid_cmd";
+            case ERROR_INVALID_DB_TYPE: return "invalid_db_type";
+            case ERROR_INVALID_VALUE: return "invalid_value";
             // bonafide BDB errors
             case DB_BUFFER_SMALL:     return "buffer_small";
             case DB_DONOTINDEX:       return "do_not_index";
@@ -1573,10 +1578,24 @@ static void async_cleanup_and_send_kv(PortData* d, int rc, DBT* key, DBT* value)
     }
     else
     {
-        ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("error"),
-                                      ERL_DRV_INT, rc,
-                                      ERL_DRV_TUPLE, 2};
-        driver_send_term(port, pid, response, sizeof(response) / sizeof(response[0]));
+        // See if this is a standard errno that we have an erlang code for
+        char *error = rc_to_atom_str(rc);
+        if (NULL != error)
+        {
+            ErlDrvTermData response[] = { ERL_DRV_ATOM,  driver_mk_atom("error"),
+                                          ERL_DRV_ATOM,  driver_mk_atom(error),
+                                          ERL_DRV_TUPLE, 2};
+            driver_send_term(port, pid, response, sizeof(response) / sizeof(response[0]));
+        }
+        else
+        {
+            ErlDrvTermData response[] = { ERL_DRV_ATOM, driver_mk_atom("error"),
+                                          ERL_DRV_ATOM, driver_mk_atom("unknown"),
+                                          ERL_DRV_INT,  rc,
+                                          ERL_DRV_TUPLE, 2,
+                                          ERL_DRV_TUPLE, 2};
+            driver_send_term(port, pid, response, sizeof(response) / sizeof(response[0]));
+        }
     }
 }
 
@@ -2121,10 +2140,23 @@ static void do_async_put(void* arg)
     value.size = UNPACK_INT(d->work_buffer, 12 + key.size);
     value.data = UNPACK_BLOB(d->work_buffer, 12 + key.size + 4);
 
-    // Execute the actual put. All databases are opened with AUTO_COMMIT, so if msg->port->txn
-    // is NULL, the put will still be atomic
-    int rc = db->put(db, d->txn, &key, &value, flags);
+    // Check CRC in value payload - first 4 bytes are CRC of rest of bytes
+    assert(value.size >= 4);
+    uint32_t calc_crc32 = bdberl_crc32(value.data+4, value.size-4);
+    uint32_t file_crc32 = *(uint32_t*) value.data;
     
+    int rc;
+    if (calc_crc32 != file_crc32)
+    {
+        rc = ERROR_INVALID_VALUE;
+    }
+    else
+    {
+        // Execute the actual put. All databases are opened with AUTO_COMMIT, so if msg->port->txn
+        // is NULL, the put will still be atomic
+        rc = db->put(db, d->txn, &key, &value, flags);
+    }
+
     // If any error occurs while we have a txn action, abort it
     if (d->txn && rc)
     {
@@ -2167,17 +2199,36 @@ static void do_async_get(void* arg)
     key.data = UNPACK_BLOB(d->work_buffer, 12);
 
     // Allocate a buffer for the output value
-    value.data = driver_alloc(4096);
+#ifdef USE_DRIVER_REALLOC
     value.ulen = 4096;
+    value.data = driver_alloc(value.ulen);
     value.flags = DB_DBT_USERMEM;
+#else
+    value.flags = DB_DBT_MALLOC;
+#endif
     
     int rc = db->get(db, d->txn, &key, &value, flags);
+#ifdef USE_DRIVER_REALLOC
     while (rc == DB_BUFFER_SMALL)
     {
-        // Grow our value buffer and try again
-        value.data = driver_realloc(value.data, value.size);
+        // Grow our value buffer
         value.ulen = value.size;
+        value.size = 0;
+        value.data = driver_realloc(value.data, value.ulen);
         rc = db->get(db, d->txn, &key, &value, flags);
+    }
+#endif
+    // Check CRC - first 4 bytes are CRC of rest of bytes
+    if (0 == rc)
+    {
+        assert(value.size >= 4);
+        uint32_t calc_crc32 = bdberl_crc32(value.data+4, value.size-4);
+        uint32_t file_crc32 = *(uint32_t*) value.data;
+
+        if (calc_crc32 != file_crc32)
+        {
+            rc = ERROR_INVALID_VALUE;
+        }
     }
 
     // Cleanup transaction as necessary
@@ -2190,7 +2241,12 @@ static void do_async_get(void* arg)
     async_cleanup_and_send_kv(d, rc, &key, &value);
 
     // Finally, clean up value buffer (driver_send_term made a copy)
+#ifdef USE_DRIVER_REALLOC
     driver_free(value.data);
+#else
+    if (value.data)
+        free(value.data);
+#endif
 }
 
 static void do_async_txnop(void* arg)
@@ -2245,6 +2301,19 @@ static void do_async_cursor_get(void* arg)
 
     // Execute the operation
     int rc = d->cursor->get(d->cursor, &key, &value, flags);
+
+    // Check CRC - first 4 bytes are CRC of rest of bytes
+    if (0 == rc)
+    {
+        assert(value.size >= 4);
+        uint32_t calc_crc32 = bdberl_crc32(value.data+4, value.size-4);
+        uint32_t file_crc32 = *(uint32_t*) value.data;
+
+        if (calc_crc32 != file_crc32)
+        {
+            rc = ERROR_INVALID_VALUE;
+        }
+    }
 
     // Cleanup as necessary; any sort of failure means we need to close the cursor and abort
     // the transaction

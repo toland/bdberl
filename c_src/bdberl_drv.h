@@ -10,7 +10,7 @@
 #include "erl_driver.h"
 #include "db.h"
 #include "bdberl_tpool.h"
-
+#include "bdberl_crc32.h"
 /**
  * Driver functions
  */
@@ -91,6 +91,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define ERROR_DB_ACTIVE     (-29007) /* Database is currently active; operation requires otherwise */
 #define ERROR_INVALID_CMD   (-29008) /* Invalid command code requested */
 #define ERROR_INVALID_DB_TYPE  (-29009) /* Invalid database type */
+#define ERROR_INVALID_VALUE (-29010) /* Invalid CRC-32 on value */
 
 /**
  * System information ids
