@@ -226,6 +226,10 @@ static TPoolJob* next_job(TPool* tpool)
         {
             job->next = tpool->active_jobs;
         }
+        else
+        {
+            job->next = NULL;
+        }
         tpool->active_jobs = job;
 
         // Update counters
