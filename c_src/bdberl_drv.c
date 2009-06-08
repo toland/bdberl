@@ -146,9 +146,14 @@ static ErlDrvPort     G_LOG_PORT;
  */
 static unsigned int G_PAGE_SIZE = 0;
 
-/**
+/** Thread pools
  *
  */
+#define DEFAULT_NUM_GENERAL_THREADS 10
+#define DEFAULT_NUM_TXN_THREADS     10
+
+static int G_NUM_GENERAL_THREADS = DEFAULT_NUM_GENERAL_THREADS;
+static int G_NUM_TXN_THREADS = DEFAULT_NUM_TXN_THREADS;
 static TPool* G_TPOOL_GENERAL = NULL;
 static TPool* G_TPOOL_TXNS    = NULL;
 
@@ -358,9 +363,33 @@ DRIVER_INIT(bdberl_drv)
                               &checkpointer, 0, 0);
 
         // Startup our thread pools
-        // TODO: Make configurable/adjustable
-        G_TPOOL_GENERAL = bdberl_tpool_start(10);
-        G_TPOOL_TXNS    = bdberl_tpool_start(10);
+        char num_general_threads_str[64];
+        value_size = sizeof(num_general_threads_str);
+        if (erl_drv_getenv("BDBERL_NUM_GENERAL_THREADS", num_general_threads_str, &value_size) >= 0)
+        {
+            assert(value_size < sizeof(num_general_threads_str));
+
+            G_NUM_GENERAL_THREADS = atoi(num_general_threads_str);
+            if (G_NUM_GENERAL_THREADS <= 0)
+            {
+                G_NUM_GENERAL_THREADS = DEFAULT_NUM_GENERAL_THREADS;
+            }
+        }
+        G_TPOOL_GENERAL = bdberl_tpool_start(G_NUM_GENERAL_THREADS);
+
+        char num_txn_threads_str[64];
+        value_size = sizeof(num_txn_threads_str);
+        if (erl_drv_getenv("BDBERL_NUM_TXN_THREADS", num_txn_threads_str, &value_size) >= 0)
+        {
+            assert(value_size < sizeof(num_txn_threads_str));
+
+            G_NUM_TXN_THREADS = atoi(num_txn_threads_str);
+            if (G_NUM_TXN_THREADS <= 0)
+            {
+                G_NUM_TXN_THREADS = DEFAULT_NUM_TXN_THREADS;
+            }
+        }
+        G_TPOOL_TXNS    = bdberl_tpool_start(G_NUM_TXN_THREADS);
 
         // Initialize logging lock and refs
         G_LOG_RWLOCK = erl_drv_rwlock_create("bdberl_drv: G_LOG_RWLOCK");
