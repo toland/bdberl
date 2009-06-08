@@ -846,21 +846,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // the underlying handle disappearing since we have a reference.
         if (has_dbref(d, dbref))
         {
-            // If the working buffer is large enough, copy the data to put/get into it. Otherwise, realloc
-            // until it is large enough
-            if (d->work_buffer_sz < inbuf_sz)
-            {
-                d->work_buffer = driver_realloc(d->work_buffer, inbuf_sz);
-                d->work_buffer_sz = inbuf_sz;
-            }
-
-            // Copy the payload into place
-            memcpy(d->work_buffer, inbuf, inbuf_sz);
-            d->work_buffer_offset = inbuf_sz;
-
             // Mark the port as busy and then schedule the appropriate async operation
+            d->async_dbref = dbref;
             d->async_op = cmd;
             d->async_pool = G_TPOOL_GENERAL;
+            d->async_flags = UNPACK_INT(inbuf, 4);
             bdberl_tpool_run(d->async_pool, &do_async_stat, d, 0, &d->async_job);
 
             // Let caller know that the operation is in progress
@@ -931,6 +921,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Mark the port as busy and then schedule the appropriate async operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
+        d->async_flags = UNPACK_INT(inbuf, 0);
         bdberl_tpool_run(d->async_pool, &do_async_lock_stat, d, 0, &d->async_job);
         
         // Let caller know that the operation is in progress
@@ -970,6 +961,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Mark the port as busy and then schedule the appropriate async operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
+        d->async_flags = UNPACK_INT(inbuf, 0);
         bdberl_tpool_run(d->async_pool, &do_async_log_stat, d, 0, &d->async_job);
         
         // Let caller know that the operation is in progress
@@ -994,21 +986,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         FAIL_IF_ASYNC_PENDING(d, outbuf);
 
         // Inbuf is <<Flags:32 >>
-        // If the working buffer is large enough, copy the data to put/get into it. Otherwise, realloc
-        // until it is large enough
-        if (d->work_buffer_sz < inbuf_sz)
-        {
-            d->work_buffer = driver_realloc(d->work_buffer, inbuf_sz);
-            d->work_buffer_sz = inbuf_sz;
-        }
-        
-        // Copy the payload into place
-        memcpy(d->work_buffer, inbuf, inbuf_sz);
-        d->work_buffer_offset = inbuf_sz;
-        
+      
         // Mark the port as busy and then schedule the appropriate async operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
+        d->async_flags = UNPACK_INT(inbuf, 0);
         bdberl_tpool_run(d->async_pool, &do_async_memp_stat, d, 0, &d->async_job);
         
         // Let caller know that the operation is in progress
@@ -1033,21 +1015,11 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         FAIL_IF_ASYNC_PENDING(d, outbuf);
 
         // Inbuf is <<Flags:32 >>
-        // If the working buffer is large enough, copy the data to put/get into it. Otherwise, realloc
-        // until it is large enough
-        if (d->work_buffer_sz < inbuf_sz)
-        {
-            d->work_buffer = driver_realloc(d->work_buffer, inbuf_sz);
-            d->work_buffer_sz = inbuf_sz;
-        }
-        
-        // Copy the payload into place
-        memcpy(d->work_buffer, inbuf, inbuf_sz);
-        d->work_buffer_offset = inbuf_sz;
-        
+
         // Mark the port as busy and then schedule the appropriate async operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
+        d->async_flags = UNPACK_INT(inbuf, 0);
         bdberl_tpool_run(d->async_pool, &do_async_mutex_stat, d, 0, &d->async_job);
         
         // Let caller know that the operation is in progress
@@ -1072,21 +1044,10 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         FAIL_IF_ASYNC_PENDING(d, outbuf);
 
         // Inbuf is <<Flags:32 >>
-        // If the working buffer is large enough, copy the data to put/get into it. Otherwise, realloc
-        // until it is large enough
-        if (d->work_buffer_sz < inbuf_sz)
-        {
-            d->work_buffer = driver_realloc(d->work_buffer, inbuf_sz);
-            d->work_buffer_sz = inbuf_sz;
-        }
-        
-        // Copy the payload into place
-        memcpy(d->work_buffer, inbuf, inbuf_sz);
-        d->work_buffer_offset = inbuf_sz;
-        
         // Mark the port as busy and then schedule the appropriate async operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
+        d->async_flags = UNPACK_INT(inbuf, 0);
         bdberl_tpool_run(d->async_pool, &do_async_txn_stat, d, 0, &d->async_job);
         
         // Let caller know that the operation is in progress
@@ -1402,6 +1363,7 @@ static void async_cleanup(PortData* d)
     // Release the port for another operation
     d->work_buffer_offset = 0;
     erl_drv_mutex_lock(d->port_lock);
+    d->async_dbref = -1;
     d->async_pool = 0;
     d->async_job  = 0;
     d->async_op = CMD_NONE;
@@ -2394,8 +2356,7 @@ static void do_async_stat(void* arg)
     PortData* d = (PortData*)arg;
 
     // Get the database object, using the provided ref
-    int dbref = UNPACK_INT(d->work_buffer, 0);
-    DB* db = G_DATABASES[dbref].db;
+    DB* db = G_DATABASES[d->async_dbref].db;
     DBTYPE type = DB_UNKNOWN;
     int rc = db->get_type(db, &type);
     if (rc != 0)
@@ -2404,11 +2365,8 @@ static void do_async_stat(void* arg)
         return;
     }
 
-    // Extract operation flags
-    unsigned flags = UNPACK_INT(d->work_buffer, 4);
-
     void *sp = NULL;
-    rc = db->stat(db, d->txn, &sp, flags);
+    rc = db->stat(db, d->txn, &sp, d->async_flags);
     if (rc != 0 || sp == NULL)
     {
         async_cleanup_and_send_rc(d, rc);
@@ -2447,11 +2405,8 @@ static void do_async_lock_stat(void* arg)
     // Payload is: <<Flags:32 >>
     PortData* d = (PortData*)arg;
 
-    // Extract operation flags
-    unsigned flags = UNPACK_INT(d->work_buffer, 0);
-
     DB_LOCK_STAT *lsp = NULL;
-    int rc = G_DB_ENV->lock_stat(G_DB_ENV, &lsp, flags);
+    int rc = G_DB_ENV->lock_stat(G_DB_ENV, &lsp, d->async_flags);
     if (rc != 0 || lsp == NULL)
     {
         async_cleanup_and_send_rc(d, rc);
@@ -2473,11 +2428,8 @@ static void do_async_log_stat(void* arg)
     // Payload is: <<Flags:32 >>
     PortData* d = (PortData*)arg;
 
-    // Extract operation flags
-    unsigned flags = UNPACK_INT(d->work_buffer, 0);
-
     DB_LOG_STAT *lsp = NULL;
-    int rc = G_DB_ENV->log_stat(G_DB_ENV, &lsp, flags);
+    int rc = G_DB_ENV->log_stat(G_DB_ENV, &lsp, d->async_flags);
     if (rc != 0 || lsp == NULL)
     {
         async_cleanup_and_send_rc(d, rc);
@@ -2499,12 +2451,9 @@ static void do_async_memp_stat(void* arg)
     // Payload is: <<Flags:32 >>
     PortData* d = (PortData*)arg;
 
-    // Extract operation flags
-    unsigned flags = UNPACK_INT(d->work_buffer, 0);
-
     DB_MPOOL_STAT *gsp = NULL;
     DB_MPOOL_FSTAT **fsp = NULL;
-    int rc = G_DB_ENV->memp_stat(G_DB_ENV, &gsp, &fsp, flags);
+    int rc = G_DB_ENV->memp_stat(G_DB_ENV, &gsp, &fsp, d->async_flags);
     if (rc != 0 || gsp == NULL)
     {
         async_cleanup_and_send_rc(d, rc);
@@ -2530,11 +2479,8 @@ static void do_async_mutex_stat(void* arg)
     // Payload is: <<Flags:32 >>
     PortData* d = (PortData*)arg;
 
-    // Extract operation flags
-    unsigned flags = UNPACK_INT(d->work_buffer, 0);
-
     DB_MUTEX_STAT *msp = NULL;
-    int rc = G_DB_ENV->mutex_stat(G_DB_ENV, &msp, flags);
+    int rc = G_DB_ENV->mutex_stat(G_DB_ENV, &msp, d->async_flags);
     if (rc != 0 || msp == NULL)
     {
         async_cleanup_and_send_rc(d, rc);
@@ -2557,11 +2503,8 @@ static void do_async_txn_stat(void* arg)
     // Payload is: <<Flags:32 >>
     PortData* d = (PortData*)arg;
 
-    // Extract operation flags
-    unsigned flags = UNPACK_INT(d->work_buffer, 0);
-
     DB_TXN_STAT *tsp = NULL;
-    int rc = G_DB_ENV->txn_stat(G_DB_ENV, &tsp, flags);
+    int rc = G_DB_ENV->txn_stat(G_DB_ENV, &tsp, d->async_flags);
     if (rc != 0 || tsp == NULL)
     {
         async_cleanup_and_send_rc(d, rc);

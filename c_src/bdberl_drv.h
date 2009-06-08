@@ -171,6 +171,8 @@ typedef struct
 
     DBC* cursor;            /* Active cursor handle; each port may have only 1 cursor active */
 
+    int async_dbref;            /* Db reference for async operations */
+
     int async_op;               /* Value indicating what async op is pending */
 
     int async_flags;            /* Flags for the async op command */
