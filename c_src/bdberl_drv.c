@@ -796,11 +796,10 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // the underlying handle disappearing since we have a reference.
         if (dbref == -1 || has_dbref(d, dbref))
         {
-            memcpy(d->work_buffer, inbuf, inbuf_sz);
-
             // Mark the port as busy and then schedule the appropriate async operation
             d->async_op = cmd;
             d->async_pool = G_TPOOL_GENERAL;
+            d->async_dbref = dbref;
             bdberl_tpool_run(d->async_pool, &do_async_truncate, d, 0, &d->async_job);
 
             // Let caller know that the operation is in progress
@@ -2301,10 +2300,9 @@ static void do_async_truncate(void* arg)
     PortData* d = (PortData*)arg;
 
     // Get the database reference and flags from the payload
-    int dbref = UNPACK_INT(d->work_buffer, 0);
     int rc = 0;
 
-    if (dbref == -1)
+    if (d->async_dbref == -1)
     {
         DBG("Truncating all open databases...\r\n");
 
@@ -2331,7 +2329,7 @@ static void do_async_truncate(void* arg)
     }
     else
     {
-        DB* db = G_DATABASES[dbref].db;
+        DB* db = G_DATABASES[d->async_dbref].db;
 
         DBG("Truncating dbref %i\r\n", dbref);
 
