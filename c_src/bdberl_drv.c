@@ -904,19 +904,6 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     {
         FAIL_IF_ASYNC_PENDING(d, outbuf);
 
-        // Inbuf is <<Flags:32 >>
-        // If the working buffer is large enough, copy the data to put/get into it. Otherwise, realloc
-        // until it is large enough
-        if (d->work_buffer_sz < inbuf_sz)
-        {
-            d->work_buffer = driver_realloc(d->work_buffer, inbuf_sz);
-            d->work_buffer_sz = inbuf_sz;
-        }
-        
-        // Copy the payload into place
-        memcpy(d->work_buffer, inbuf, inbuf_sz);
-        d->work_buffer_offset = inbuf_sz;
-        
         // Mark the port as busy and then schedule the appropriate async operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
@@ -945,18 +932,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         FAIL_IF_ASYNC_PENDING(d, outbuf);
 
         // Inbuf is <<Flags:32 >>
-        // If the working buffer is large enough, copy the data to put/get into it. Otherwise, realloc
-        // until it is large enough
-        if (d->work_buffer_sz < inbuf_sz)
-        {
-            d->work_buffer = driver_realloc(d->work_buffer, inbuf_sz);
-            d->work_buffer_sz = inbuf_sz;
-        }
-        
-        // Copy the payload into place
-        memcpy(d->work_buffer, inbuf, inbuf_sz);
-        d->work_buffer_offset = inbuf_sz;
-        
+
         // Mark the port as busy and then schedule the appropriate async operation
         d->async_op = cmd;
         d->async_pool = G_TPOOL_GENERAL;
