@@ -11,18 +11,7 @@
 #include "db.h"
 #include "bdberl_tpool.h"
 #include "bdberl_crc32.h"
-/**
- * Driver functions
- */
-static ErlDrvData bdberl_drv_start(ErlDrvPort port, char* buffer);
-
-static void bdberl_drv_stop(ErlDrvData handle);
-
-static void bdberl_drv_finish();
-
-static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd, 
-                              char* inbuf, int inbuf_sz, 
-                              char** outbuf, int outbuf_sz);
+#include "bin_helper.h"
 
 
 /**
@@ -101,34 +90,7 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
 #define SYSP_DATA_DIR_GET                3
 #define SYSP_LOG_DIR_GET                 4
 
-/** 
- * Driver Entry
- */
-ErlDrvEntry bdberl_drv_entry = 
-{
-    NULL,			/* F_PTR init, N/A */
-    bdberl_drv_start,		/* L_PTR start, called when port is opened */
-    bdberl_drv_stop,		/* F_PTR stop, called when port is closed */
-    NULL,			/* F_PTR output, called when erlang has sent */
-    NULL,                       /* F_PTR ready_input, called when input descriptor ready */
-    NULL,			/* F_PTR ready_output, called when output descriptor ready */
-    "bdberl_drv",               /* driver_name */
-    bdberl_drv_finish,          /* F_PTR finish, called when unloaded */
-    NULL,			/* handle */
-    bdberl_drv_control,		/* F_PTR control, port_command callback */
-    NULL,			/* F_PTR timeout, reserved */
-    NULL,                       /* F_PTR outputv, reserved */
-    NULL,                       /* F_PTR ready_async */
-    NULL,                       /* F_PTR flush */
-    NULL,                       /* F_PTR call */
-    NULL,                       /* F_PTR event */
-    ERL_DRV_EXTENDED_MARKER,        
-    ERL_DRV_EXTENDED_MAJOR_VERSION, 
-    ERL_DRV_EXTENDED_MINOR_VERSION,
-    ERL_DRV_FLAG_USE_PORT_LOCKING,
-    NULL,                        /* Reserved */
-    NULL                         /* F_PTR process_exit */
-};
+
 
 typedef struct _DbRefList
 {
@@ -189,4 +151,74 @@ typedef struct
 
 } PortData;
 
-#endif
+/**
+ * Function Prototypes
+ */
+
+void bdberl_async_cleanup(PortData* d);
+void bdberl_send_rc(ErlDrvPort port, ErlDrvTermData pid, int rc);
+void bdberl_async_cleanup_and_send_rc(PortData* d, int rc);
+
+char* bdberl_rc_to_atom_str(int rc);
+DB_ENV* bdberl_db_env(void);
+DB* bdberl_lookup_dbref(int dbref);
+int bdberl_has_dbref(PortData* data, int dbref);
+
+void bdberl_general_tpool_run(TPoolJobFunc main_fn,  PortData* d, TPoolJobFunc cancel_fn,
+    TPoolJob** job_ptr);
+void bdberl_txn_tpool_run(TPoolJobFunc main_fn,  PortData* d, TPoolJobFunc cancel_fn,
+    TPoolJob** job_ptr);
+
+/**
+ * Helpful macros
+ */
+#define UNPACK_BYTE(_buf, _off) (_buf[_off])
+#define UNPACK_INT(_buf, _off) *((int*)(_buf+(_off)))
+#define UNPACK_STRING(_buf, _off) (char*)(_buf+(_off))
+#define UNPACK_BLOB(_buf, _off) (void*)(_buf+(_off))
+
+#define RETURN_BH(bh, outbuf) *outbuf = (char*)bh.bin; return bh.offset;
+
+#define RETURN_INT(val, outbuf) {             \
+        BinHelper bh;                         \
+        bin_helper_init(&bh);                 \
+        bin_helper_push_int32(&bh, val);      \
+        RETURN_BH(bh, outbuf); }
+
+#define FAIL_IF_ASYNC_PENDING(d, outbuf) {              \
+    erl_drv_mutex_lock(d->port_lock);                   \
+    if (d->async_op != CMD_NONE) {                      \
+        erl_drv_mutex_unlock(d->port_lock);             \
+        RETURN_INT(ERROR_ASYNC_PENDING, outbuf);        \
+    } else {                                            \
+        erl_drv_mutex_unlock(d->port_lock);             \
+    }}
+
+
+#define FAIL_IF_CURSOR_OPEN(d, outbuf) {                        \
+    if (NULL != d->cursor)                                      \
+    {                                                           \
+        bdberl_send_rc(d->port, d->port_owner, ERROR_CURSOR_OPEN);     \
+        RETURN_INT(0, outbuf);                                  \
+    }}
+#define FAIL_IF_NO_CURSOR(d, outbuf) {                          \
+    if (NULL == d->cursor)                                      \
+    {                                                           \
+        bdberl_send_rc(d->port, d->port_owner, ERROR_NO_CURSOR);       \
+        RETURN_INT(0, outbuf);                                  \
+    }}
+
+#define FAIL_IF_TXN_OPEN(d, outbuf) {                           \
+        if (NULL != d->txn)                                     \
+    {                                                           \
+        bdberl_send_rc(d->port, d->port_owner, ERROR_TXN_OPEN);        \
+        RETURN_INT(0, outbuf);                                  \
+    }}
+#define FAIL_IF_NO_TXN(d, outbuf) {                             \
+        if (NULL == d->txn)                                     \
+    {                                                           \
+        bdberl_send_rc(d->port, d->port_owner, ERROR_NO_TXN);          \
+        RETURN_INT(0, outbuf);                                  \
+    }}
+
+#endif //_BDBERL_DRV
