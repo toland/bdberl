@@ -206,29 +206,13 @@ static TPool* G_TPOOL_TXNS    = NULL;
 #define WRITE_LOCK(L) erl_drv_rwlock_rwlock(L)
 #define WRITE_UNLOCK(L) erl_drv_rwlock_rwunlock(L)
 
-
 #ifdef DEBUG
 #  define DBG(...) fprintf(stderr, __VA_ARGS__)
-static void DBGCMD(PortData *d, const char *fmt, ...)
-{
-    char buf[1024];
-
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-
-    (void)fprintf(stderr, "threadid %p port %p: %s\r\n", erl_drv_thread_self(), d->port, buf);
-}
-static void DBGCMDRC(PortData *d, int rc)
-{
-    (void)fprintf(stderr, "threadid %p port %p: rc = %s (%d)\r\n",
-                  erl_drv_thread_self(), d->port, rc == 0 ? "ok" : bdberl_bdberl_rc_to_atom_str(rc), rc);
-}
-
+static void DBGCMD(PortData *d, const char *fmt, ...);
+static void DBGCMDRC(PortData *d, int rc);
 #else
 #  define DBG(arg1,...)
-#  define DBGCMD(d, fmt, ...)
+#  define DBGCMDX(d, fmt, ...)
 #  define DBGCMDRC(d, rc) { while (0) { rc++; } }  // otherwise get unused variable error
 #endif
 
@@ -266,7 +250,7 @@ DRIVER_INIT(bdberl_drv)
     }
     else
     {
-        DBG("G_DB_ENV->open(%p, 0, %08X, 0);", &G_DB_ENV, flags);
+        DBG("G_DB_ENV->open(%p, 0, %08X, 0)", &G_DB_ENV, flags);
         G_DB_ENV_ERROR = G_DB_ENV->open(G_DB_ENV, 0, flags, 0);
         DBG(" = %d\r\n", G_DB_ENV_ERROR);
         if (G_DB_ENV_ERROR != 0)
@@ -1062,7 +1046,7 @@ static int open_database(const char* name, DBTYPE type, unsigned int flags, Port
         DB* db = NULL;
         DBGCMD(data, "db_create(&db, %p, 0);", G_DB_ENV);
         int rc = db_create(&db, G_DB_ENV, 0);
-        DBGCMD(data, "rc = %s (%d) db = %p", rc == 0 ? "ok" : bdberl_bdberl_rc_to_atom_str(rc), rc, db);
+        DBGCMD(data, "rc = %s (%d) db = %p", rc == 0 ? "ok" : bdberl_rc_to_atom_str(rc), rc, db);
         if (rc != 0)
         {
             // Failure while creating the database handle -- drop our lock and return 
@@ -1264,10 +1248,9 @@ void bdberl_async_cleanup(PortData* d)
 
 // Convert an rc from BDB into a string suitable for driver_mk_atom
 // returns NULL on no match
-char *bdberl_bdberl_rc_to_atom_str(int rc)
+char *bdberl_rc_to_atom_str(int rc)
 {
     char *error = erl_errno_id(rc);
-    //fprintf(stderr, "erl_errno_id(%d) = %s db_strerror = %s\n", rc, error, db_strerror(rc));
     if (NULL != error && strcmp("unknown", error) != 0)
     {
         return error;
@@ -1369,7 +1352,7 @@ void bdberl_send_rc(ErlDrvPort port, ErlDrvTermData pid, int rc)
     else
     {
         // See if this is a standard errno that we have an erlang code for
-        char *error = bdberl_bdberl_rc_to_atom_str(rc);
+        char *error = bdberl_rc_to_atom_str(rc);
         if (NULL != error)
         {
             ErlDrvTermData response[] = { ERL_DRV_ATOM,  driver_mk_atom("error"),
@@ -1432,7 +1415,7 @@ static void async_cleanup_and_send_kv(PortData* d, int rc, DBT* key, DBT* value)
     else
     {
         // See if this is a standard errno that we have an erlang code for
-        char *error = bdberl_bdberl_rc_to_atom_str(rc);
+        char *error = bdberl_rc_to_atom_str(rc);
         if (NULL != error)
         {
             ErlDrvTermData response[] = { ERL_DRV_ATOM,  driver_mk_atom("error"),
@@ -1490,7 +1473,7 @@ static void do_async_put(void* arg)
     {
         // Execute the actual put. All databases are opened with AUTO_COMMIT, so if msg->port->txn
         // is NULL, the put will still be atomic
-        DBGCMD(d, "db->put(%p, %p, %p, &p, %08X) key=%p(%d) value=%p(%d)",
+        DBGCMD(d, "db->put(%p, %p, %p, %p, %08X) key=%p(%d) value=%p(%d)",
                db, d->txn, &key, &value, flags, key.data, key.size, value.data, value.size);
         rc = db->put(db, d->txn, &key, &value, flags);
         DBGCMDRC(d, rc);
@@ -1599,7 +1582,7 @@ static void do_async_txnop(void* arg)
     {
         DBGCMD(d, "G_DB_ENV->txn_begin(%p, 0, %p, %08X)", G_DB_ENV, d->txn, d->async_flags);
         rc = G_DB_ENV->txn_begin(G_DB_ENV, 0, &(d->txn), d->async_flags);
-        DBGCMD(d, "rc = %s (%d) d->txn = %p", rc == 0 ? "ok" : bdberl_bdberl_rc_to_atom_str(rc), rc, d->txn);
+        DBGCMD(d, "rc = %s (%d) d->txn = %p", rc == 0 ? "ok" : bdberl_rc_to_atom_str(rc), rc, d->txn);
 
     }
     else if (d->async_op == CMD_TXN_COMMIT)
@@ -1645,7 +1628,7 @@ static void do_async_cursor_get(void* arg)
     }
 
     // Execute the operation
-    DBGCMD(d, "d->cursor->get(%p, &key, &value, flags);");
+    DBGCMD(d, "d->cursor->get(%p, %p, %p, %08X);", d->cursor, &key, &value, flags);
     int rc = d->cursor->get(d->cursor, &key, &value, flags);
     DBGCMDRC(d, rc);
 
@@ -1698,10 +1681,10 @@ static void do_async_truncate(void* arg)
                 DB* db = database->db;
                 u_int32_t count = 0;
 
-                DBGCMD(d, "db->truncate(%p, %p, %p) dbref=%d", db, d->txn, &count, 0, i);
+                DBGCMD(d, "db->truncate(%p, %p, %p, 0) dbref=%d", db, d->txn, &count, i);
                 rc = db->truncate(db, d->txn, &count, 0);
                 DBGCMD(d, "rc = %s (%d) count=%d", 
-                       rc == 0 ? "ok" : bdberl_bdberl_rc_to_atom_str(rc), rc, count);
+                       rc == 0 ? "ok" : bdberl_rc_to_atom_str(rc), rc, count);
 
                 if (rc != 0)
                 {
@@ -1716,7 +1699,7 @@ static void do_async_truncate(void* arg)
         u_int32_t count = 0;
         DBGCMD(d, "db->truncate(%p, %p, %p, 0) dbref=%d", db, d->txn, &count, d->async_dbref);
         rc = db->truncate(db, d->txn, &count, 0);
-        DBGCMD(d, "rc = %s (%d) count=%d", rc == 0 ? "ok" : bdberl_bdberl_rc_to_atom_str(rc), 
+        DBGCMD(d, "rc = %s (%d) count=%d", rc == 0 ? "ok" : bdberl_rc_to_atom_str(rc), 
                rc, count);
     }
 
@@ -2155,4 +2138,23 @@ static void send_log_message(ErlDrvTermData* msg, int elements)
     }
 }
 
+#ifdef DEBUG
+#if 1
+static void DBGCMD(PortData *d, const char *fmt, ...)
+{
+    char buf[1024];
 
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    (void)fprintf(stderr, "threadid %p port %p: %s\r\n", erl_drv_thread_self(), d->port, buf);
+}
+#endif
+static void DBGCMDRC(PortData *d, int rc)
+{
+    (void)fprintf(stderr, "threadid %p port %p: rc = %s (%d)\r\n",
+                  erl_drv_thread_self(), d->port, rc == 0 ? "ok" : bdberl_rc_to_atom_str(rc), rc);
+}
+#endif // DEBUG
