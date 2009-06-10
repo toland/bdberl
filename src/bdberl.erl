@@ -164,17 +164,7 @@ open(Name, Type, Opts) ->
     Flags = process_flags(lists:umerge(Opts, [auto_commit, threaded])),
     Cmd = <<Flags:32/native, TypeCode:8/signed-native, (list_to_binary(Name))/bytes, 0:8/native>>,
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_OPEN_DB, Cmd),
-    case decode_rc(Rc) of
-        ok ->
-            receive 
-                {ok, DbRef} ->
-                    {ok, DbRef};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        Error ->
-            {error, Error}
-    end.
+    recv_val(Rc).
 
 
 %%--------------------------------------------------------------------
@@ -236,18 +226,7 @@ close(Db, Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Db:32/signed-native, Flags:32/native>>,
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CLOSE_DB, Cmd),
-    case decode_rc(Rc) of
-        ok ->
-            receive 
-                ok ->
-                    ok;
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        Error ->
-            {error, Error}
-    end.
-
+    recv_ok(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -354,19 +333,8 @@ txn_begin() ->
 txn_begin(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, Reason}
-            end;
-
-        Error ->
-            {error, Error}
-    end.
-
-
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_BEGIN, Cmd),
+    recv_ok(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -428,17 +396,8 @@ txn_commit() ->
 txn_commit(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_COMMIT, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, Reason}
-            end;
-        Error ->
-            {error, Error}
-    end.
-
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TXN_COMMIT, Cmd),
+    recv_ok(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1061,18 +1020,8 @@ truncate() ->
 
 truncate(Db) ->
     Cmd = <<Db:32/signed-native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TRUNCATE, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, Reason}
-            end;
-
-        Error ->
-            {error, Error}
-    end.
-
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_TRUNCATE, Cmd),
+    recv_ok(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1093,17 +1042,7 @@ truncate(Db) ->
 cursor_open(Db) ->
     Cmd = <<Db:32/signed-native, 0:32/native>>,
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_OPEN, Cmd),
-    case decode_rc(Rc) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, Reason}
-            end;
-
-        Reason ->
-            {error, Reason}
-    end.
-
+    recv_ok(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1203,16 +1142,7 @@ cursor_current() ->
 
 cursor_close() ->
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_CURSOR_CLOSE, <<>>),
-    case decode_rc(Rc) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, Reason}
-            end;
-        Reason ->
-            {error, Reason}
-    end.
-
+    recv_ok(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1239,16 +1169,7 @@ cursor_close() ->
 delete_database(Filename) ->
     Cmd = <<(list_to_binary(Filename))/binary, 0:8>>,
     <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_REMOVE_DB, Cmd),
-    case decode_rc(Rc) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, Reason}
-            end;
-        Reason ->
-            {error, Reason}
-    end.
-
+    recv_ok(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1435,18 +1356,8 @@ get_txn_timeout() ->
 stat(Db, Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Db:32/signed-native, Flags:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_DB_STAT, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                {error, Reason} ->
-                    {error, Reason};
-                {ok, Stats} ->
-                    {ok, Stats}
-            end;
-        Error ->
-            {error, Error}
-    end.
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_DB_STAT, Cmd),
+    recv_val(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1458,7 +1369,7 @@ stat(Db, Opts) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec stat(Opts :: db_flags()) ->
+-spec stat(Db :: db()) ->
     {ok, [{atom(), number()}]} | db_error().
 stat(Db) ->
     stat(Db, []).
@@ -1550,18 +1461,8 @@ stat_print(Db) ->
 lock_stat(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOCK_STAT, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                {error, Reason} ->
-                    {error, Reason};
-                {ok, Stats} ->
-                    {ok, Stats}
-            end;
-        Error ->
-            {error, Error}
-    end.
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOCK_STAT, Cmd),
+    recv_val(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1656,18 +1557,8 @@ lock_stat_print() ->
 log_stat(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_STAT, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                {error, Reason} ->
-                    {error, Reason};
-                {ok, Stats} ->
-                    {ok, Stats}
-            end;
-        Error ->
-            {error, Error}
-    end.
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_LOG_STAT, Cmd),
+    recv_val(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -1847,18 +1738,8 @@ memp_stat_print() ->
 mutex_stat(Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Flags:32/native>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MUTEX_STAT, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                {error, Reason} ->
-                    {error, Reason};
-                {ok, Stats} ->
-                    {ok, Stats}
-            end;
-        Error ->
-            {error, Error}
-    end.
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_MUTEX_STAT, Cmd),
+    recv_val(Rc).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -2242,18 +2123,8 @@ do_put(Action, Db, Key, Value, Opts) ->
     Flags = process_flags(Opts),
     Cmd = <<Db:32/signed-native, Flags:32/native, KeyLen:32/native, KeyBin/bytes,
            FinalValBinLen:32/native, FinalValBin/bytes>>,
-    <<Result:32/signed-native>> = erlang:port_control(get_port(), Action, Cmd),
-    case decode_rc(Result) of
-        ok ->
-            receive
-                ok -> ok;
-                {error, Reason} -> {error, decode_rc(Reason)}
-            end;
-        Error ->
-            {error, Error}
-    end.
-
-
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), Action, Cmd),
+    recv_ok(Rc).
 
 %%
 %% Move the cursor in a given direction. Invoked by cursor_next/prev/current.
@@ -2335,6 +2206,22 @@ recv_dirs_info(DirInfos) ->
             {ok, DirInfos}
     end.
     
+%%
+%% Receive an ok or an {error, Reason} pair if Rc is ok
+%%
+recv_ok(Rc) ->
+    case decode_rc(Rc) of
+        ok ->
+            receive 
+                ok ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
 %%
 %% Receive an {ok, Val} pair or an {error, Reason} pair if Rc is ok
 %%
