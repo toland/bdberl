@@ -40,6 +40,7 @@
          truncate/0, truncate/1,
          delete_database/1,
          cursor_open/1, cursor_next/0, cursor_prev/0, cursor_current/0, cursor_close/0,
+         driver_info/0,
          register_logger/0,
          stop/0]).
 
@@ -2059,6 +2060,22 @@ env_stat_print(Opts) ->
 env_stat_print() ->
     env_stat_print([]).
 
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Retrieve driver info
+%%
+%% @spec driver_info() -> {ok, [{atom(), number()}]} | {error, Error}
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec driver_info() ->
+    {ok, [{atom(), number()}]} | db_error().
+
+driver_info() ->
+    <<Rc:32/signed-native>> = erlang:port_control(get_port(), ?CMD_DRIVER_INFO, <<>>),
+    recv_val(Rc).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Registers the port owner pid to receive any BDB err/msg events. Note
@@ -2318,3 +2335,18 @@ recv_dirs_info(DirInfos) ->
             {ok, DirInfos}
     end.
     
+%%
+%% Receive an {ok, Val} pair or an {error, Reason} pair if Rc is ok
+%%
+recv_val(Rc) ->
+    case decode_rc(Rc) of
+        ok ->
+            receive 
+                {ok, Val} ->
+                    {ok, Val};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Error ->
+            {error, Error}
+    end.

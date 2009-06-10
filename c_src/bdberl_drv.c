@@ -82,6 +82,7 @@ static void do_async_txnop(void* arg);
 static void do_async_cursor_get(void* arg);
 static void do_async_truncate(void* arg);
 static void do_sync_data_dirs_info(PortData *p);
+static void do_sync_driver_info(PortData *d);
 
 static int send_dir_info(ErlDrvPort port, ErlDrvTermData pid, const char *path);
 
@@ -906,7 +907,6 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Outbuf is: <<0:32>>
         RETURN_INT(0, outbuf);
     }
-
     case CMD_LOG_DIR_INFO:
     {
         FAIL_IF_ASYNC_PENDING(d, outbuf);
@@ -933,8 +933,16 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
         // Outbuf is: <<0:32>>
         RETURN_INT(0, outbuf);
     }
+    case CMD_DRIVER_INFO:
+    {
+        FAIL_IF_ASYNC_PENDING(d, outbuf);
 
-
+        do_sync_driver_info(d);
+       
+        // Let caller know that the operation is in progress
+        // Outbuf is: <<0:32>>
+        RETURN_INT(0, outbuf);
+    }
     }
     *outbuf = 0;
     return 0;
@@ -1773,6 +1781,63 @@ static void do_sync_data_dirs_info(PortData *d)
 
     // Send the return code - will termiante the receive loop in bdberl.erl
     bdberl_send_rc(d->port, d->port_owner, rc);
+}
+
+
+// Send bdberl specific driver info
+static void do_sync_driver_info(PortData *d)
+{
+    unsigned int txn_pending;
+    unsigned int txn_active;
+    unsigned int general_pending;
+    unsigned int general_active;
+    bdberl_tpool_job_count(G_TPOOL_GENERAL, &general_pending, &general_active);
+    bdberl_tpool_job_count(G_TPOOL_TXNS, &txn_pending, &txn_active);
+
+    ErlDrvPort port = d->port;
+    ErlDrvTermData pid = d->port_owner;
+    ErlDrvTermData response[] = {
+        ERL_DRV_ATOM, driver_mk_atom("ok"),
+        // Start of list
+        ERL_DRV_ATOM, driver_mk_atom("databases_size"),
+        ERL_DRV_UINT, G_DATABASES_SIZE,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("deadlock_interval"),
+        ERL_DRV_UINT, G_DEADLOCK_CHECK_INTERVAL,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("trickle_interval"),
+        ERL_DRV_UINT, G_TRICKLE_INTERVAL,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("trickle_percentage"),
+        ERL_DRV_UINT, G_TRICKLE_PERCENTAGE,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("checkpoint_interval"),
+        ERL_DRV_UINT, G_CHECKPOINT_INTERVAL,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("num_general_threads"),
+        ERL_DRV_UINT, G_NUM_GENERAL_THREADS,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("num_txn_threads"),
+        ERL_DRV_UINT, G_NUM_TXN_THREADS,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("general_jobs_pending"),
+        ERL_DRV_UINT, general_pending,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("general_jobs_active"),
+        ERL_DRV_UINT, general_active,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("txn_jobs_pending"),
+        ERL_DRV_UINT, txn_pending,
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_ATOM, driver_mk_atom("txn_jobs_active"),
+        ERL_DRV_UINT, txn_active,
+        ERL_DRV_TUPLE, 2,
+        // End of list
+        ERL_DRV_NIL, 
+        ERL_DRV_LIST, 11+1,
+        ERL_DRV_TUPLE, 2
+    };
+    driver_send_term(port, pid, response, sizeof(response) / sizeof(response[0]));
 }
 
 

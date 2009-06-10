@@ -325,3 +325,13 @@ static int is_active_job(TPool* tpool, TPoolJob* job)
     }
     return 0;
 }
+
+// Return the number of pending and active jobs
+void bdberl_tpool_job_count(TPool* tpool, unsigned int *pending_count_ptr, 
+                             unsigned int *active_count_ptr)
+{
+    LOCK(tpool);
+    *pending_count_ptr = tpool->pending_job_count;
+    *active_count_ptr = tpool->active_job_count;
+    UNLOCK(tpool);
+}

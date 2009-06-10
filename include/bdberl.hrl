@@ -38,6 +38,7 @@
 -define(CMD_TXN_STAT_PRINT,  30).
 -define(CMD_DATA_DIRS_INFO,  31).
 -define(CMD_LOG_DIR_INFO,    32).
+-define(CMD_DRIVER_INFO,     33).
 
 -define(DB_TYPE_BTREE, 1).
 -define(DB_TYPE_HASH,  2).

@@ -65,5 +65,7 @@ void bdberl_tpool_run(TPool* tpool, TPoolJobFunc main_fn, void* arg, TPoolJobFun
 
 void bdberl_tpool_cancel(TPool* tpool, TPoolJob* job);
 
+void bdberl_tpool_job_count(TPool* tpool, unsigned int *pending_count_ptr, 
+                            unsigned int *active_count_ptr);
 
 #endif
