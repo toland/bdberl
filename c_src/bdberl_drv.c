@@ -212,7 +212,7 @@ static void DBGCMD(PortData *d, const char *fmt, ...);
 static void DBGCMDRC(PortData *d, int rc);
 #else
 #  define DBG(arg1,...)
-#  define DBGCMDX(d, fmt, ...)
+#  define DBGCMD(d, fmt, ...)
 #  define DBGCMDRC(d, rc) { while (0) { rc++; } }  // otherwise get unused variable error
 #endif
 
