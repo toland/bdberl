@@ -70,6 +70,9 @@ ErlDrvEntry bdberl_drv_entry =
 /**
  * Function prototypes
  */
+static int check_non_neg_env(char *env, unsigned int *val_ptr);
+static int check_pos_env(char *env, unsigned int *val_ptr);
+
 static int open_database(const char* name, DBTYPE type, unsigned int flags, PortData* data, int* dbref_res);
 static int close_database(int dbref, unsigned flags, PortData* data);
 static int delete_database(const char* name);
@@ -131,7 +134,7 @@ static int G_DB_ENV_ERROR = 0;
  * G_DATABASES_RWLOCK.
  */
 static Database*     G_DATABASES        = 0;
-static int           G_DATABASES_SIZE   = 0;
+static unsigned int  G_DATABASES_SIZE   = 0;
 static ErlDrvRWLock* G_DATABASES_RWLOCK = 0;
 static hive_hash*    G_DATABASES_NAMES  = 0;
 
@@ -140,11 +143,9 @@ static hive_hash*    G_DATABASES_NAMES  = 0;
  * Deadlock detector thread variables. We run a single thread per VM to detect deadlocks within
  * our global environment. G_DEADLOCK_CHECK_INTERVAL is the time between runs in milliseconds.
  */
-#define DEFAULT_DEADLOCK_CHECK_INTERVAL  100  /* 100 milliseconds */
-
 static ErlDrvTid    G_DEADLOCK_THREAD         = 0;
 static unsigned int G_DEADLOCK_CHECK_ACTIVE   = 1;
-static unsigned int G_DEADLOCK_CHECK_INTERVAL = DEFAULT_DEADLOCK_CHECK_INTERVAL; 
+static unsigned int G_DEADLOCK_CHECK_INTERVAL = 100;  /* 100 milliseconds */
 
 
 /**
@@ -189,11 +190,8 @@ static unsigned int G_PAGE_SIZE = 0;
 /** Thread pools
  *
  */
-#define DEFAULT_NUM_GENERAL_THREADS 10
-#define DEFAULT_NUM_TXN_THREADS     10
-
-static int G_NUM_GENERAL_THREADS = DEFAULT_NUM_GENERAL_THREADS;
-static int G_NUM_TXN_THREADS = DEFAULT_NUM_TXN_THREADS;
+static unsigned int G_NUM_GENERAL_THREADS = 10;
+static unsigned int G_NUM_TXN_THREADS = 10;
 static TPool* G_TPOOL_GENERAL = NULL;
 static TPool* G_TPOOL_TXNS    = NULL;
 
@@ -273,75 +271,28 @@ DRIVER_INIT(bdberl_drv)
         // Use the BDBERL_MAX_DBS environment value to determine the max # of
         // databases to permit the VM to open at once. Defaults to 1024.
         G_DATABASES_SIZE = 1024;
-        char max_dbs_str[64];
-        value_size = sizeof(max_dbs_str);
-        if (erl_drv_getenv("BDBERL_MAX_DBS", max_dbs_str, &value_size) >= 0)
-        {
-            assert(value_size < sizeof(max_dbs_str));
-            G_DATABASES_SIZE = atoi(max_dbs_str);
-            if (G_DATABASES_SIZE <= 0)
-            {
-                G_DATABASES_SIZE = 1024;
-            }
-        }
+        check_pos_env("BDBERL_MAX_DBS", &G_DATABASES_SIZE);
 
         // Use the BDBERL_TRICKLE_TIME and BDBERL_TRICKLE_PERCENTAGE to control how often
         // the trickle writer runs and what percentage of pages should be flushed.
-        char trickle_time_str[64];
-        value_size = sizeof(trickle_time_str);
-        if (erl_drv_getenv("BDBERL_TRICKLE_TIME", trickle_time_str, &value_size) >= 0)
-        {
-            assert(value_size < sizeof(trickle_time_str));
-            G_TRICKLE_INTERVAL = atoi(trickle_time_str);
-            if (G_TRICKLE_INTERVAL <= 0)
-            {
-                G_TRICKLE_INTERVAL = 60 * 5;
-            }
-        }
-
-        char trickle_percentage_str[64];
-        value_size = sizeof(trickle_percentage_str);
-        if (erl_drv_getenv("BDBERL_TRICKLE_PERCENTAGE", trickle_percentage_str, &value_size) >= 0)
-        {
-            assert(value_size < sizeof(trickle_percentage_str));
-
-            G_TRICKLE_PERCENTAGE = atoi(trickle_percentage_str);
-            if (G_TRICKLE_PERCENTAGE <= 0)
-            {
-                G_TRICKLE_PERCENTAGE = 50;
-            }
-        }
+        check_pos_env("BDBERL_TRICKLE_TIME", &G_TRICKLE_INTERVAL);
+        check_pos_env("BDBERL_TRICKLE_PERCENTAGE", &G_TRICKLE_PERCENTAGE);
 
         // Set the deadlock interval
-        char deadlock_check_interval_str[64];
-        value_size = sizeof(deadlock_check_interval_str);
-        if (erl_drv_getenv("BDBERL_DEADLOCK_CHECK_INTERVAL", 
-                           deadlock_check_interval_str, &value_size) >= 0)
-        {
-            assert(value_size < sizeof(deadlock_check_interval_str));
-
-            G_DEADLOCK_CHECK_INTERVAL = atoi(deadlock_check_interval_str);
-            if (G_DEADLOCK_CHECK_INTERVAL < 0)
-            {
-                G_DEADLOCK_CHECK_INTERVAL = DEFAULT_DEADLOCK_CHECK_INTERVAL;
-            }
-
-            fprintf(stderr, "Deadlock check interval set to %d\r\n", G_DEADLOCK_CHECK_INTERVAL);
-        }
-
+        check_pos_env("BDBERL_DEADLOCK_CHECK_INTERVAL", &G_DEADLOCK_CHECK_INTERVAL);
 
         // Initialize default page size
-        char page_size_str[64];
-        value_size = sizeof(page_size_str);
-        if (erl_drv_getenv("BDBERL_PAGE_SIZE", page_size_str, &value_size) >= 0)
+        unsigned int page_size;
+        if (check_pos_env("BDBERL_PAGE_SIZE", &page_size))
         {
-            assert(value_size < sizeof(page_size_str));
-
-            // Convert to integer and only set it if it is a power of 2.
-            unsigned int page_size = atoi(page_size_str);
             if (page_size != 0 && ((page_size & (~page_size +1)) == page_size))
             {
                 G_PAGE_SIZE = page_size;
+            }
+            else
+            {
+                fprintf(stderr, "Ignoring \"BDBERL_PAGE_SIZE\" value %u - not power of 2\r\n",
+                    page_size);
             }
         }
 
@@ -364,50 +315,17 @@ DRIVER_INIT(bdberl_drv)
 
         // Use the BDBERL_CHECKPOINT_TIME environment value to determine the
         // interval between transaction checkpoints. Defaults to 1 hour.
-        char cp_int_str[64];
-        value_size = sizeof(cp_int_str);
-        if (erl_drv_getenv("BDBERL_CHECKPOINT_TIME", cp_int_str, &value_size) >= 0)
-        {
-            assert(value_size < sizeof(cp_int_str));
-
-            G_CHECKPOINT_INTERVAL = atoi(cp_int_str);
-            if (G_CHECKPOINT_INTERVAL <= 0)
-            {
-                G_CHECKPOINT_INTERVAL = 60 * 60;
-            }
-        }
+        check_pos_env("BDBERL_CHECKPOINT_TIME", &G_CHECKPOINT_INTERVAL);
 
         // Startup checkpoint thread
         erl_drv_thread_create("bdberl_drv_checkpointer", &G_CHECKPOINT_THREAD,
                               &checkpointer, 0, 0);
 
         // Startup our thread pools
-        char num_general_threads_str[64];
-        value_size = sizeof(num_general_threads_str);
-        if (erl_drv_getenv("BDBERL_NUM_GENERAL_THREADS", num_general_threads_str, &value_size) >= 0)
-        {
-            assert(value_size < sizeof(num_general_threads_str));
-
-            G_NUM_GENERAL_THREADS = atoi(num_general_threads_str);
-            if (G_NUM_GENERAL_THREADS <= 0)
-            {
-                G_NUM_GENERAL_THREADS = DEFAULT_NUM_GENERAL_THREADS;
-            }
-        }
+        check_pos_env("BDBERL_NUM_GENERAL_THREADS", &G_NUM_GENERAL_THREADS);
         G_TPOOL_GENERAL = bdberl_tpool_start(G_NUM_GENERAL_THREADS);
 
-        char num_txn_threads_str[64];
-        value_size = sizeof(num_txn_threads_str);
-        if (erl_drv_getenv("BDBERL_NUM_TXN_THREADS", num_txn_threads_str, &value_size) >= 0)
-        {
-            assert(value_size < sizeof(num_txn_threads_str));
-
-            G_NUM_TXN_THREADS = atoi(num_txn_threads_str);
-            if (G_NUM_TXN_THREADS <= 0)
-            {
-                G_NUM_TXN_THREADS = DEFAULT_NUM_TXN_THREADS;
-            }
-        }
+        check_pos_env("BDBERL_NUM_TXN_THREADS", &G_NUM_TXN_THREADS);
         G_TPOOL_TXNS    = bdberl_tpool_start(G_NUM_TXN_THREADS);
 
         // Initialize logging lock and refs
@@ -948,6 +866,66 @@ static int bdberl_drv_control(ErlDrvData handle, unsigned int cmd,
     return 0;
 }
 
+
+// Check if an environment variable is set to a non-negative value (>=0)
+// Returns 1 and sets the destination of val_ptr to the converted value
+// Otherwise returns 0
+static int check_non_neg_env(char *env, unsigned int *val_ptr)
+{
+    char val_str[64];
+    size_t val_size = sizeof(val_str);
+
+    if (erl_drv_getenv(env, val_str, &val_size) >= 0)
+    {
+        errno = 0;
+        long long val = strtoll(val_str, NULL, 0);
+        if (0 == val && EINVAL == errno)
+        {
+            fprintf(stderr, "Ignoring \"%s\" value \"%s\" - invalid value\r\n", env, val_str);
+            return 0;
+        }
+        if (0 >= val || val > UINT_MAX)
+        {
+            fprintf(stderr, "Ignoring \"%s\" value \"%lld\" - out of range\r\n", env, val);
+            return 0;
+        }
+        unsigned int uival = (unsigned int) val;
+        DBG("Using \"%s\" value %u\r\n", env, uival);
+        *val_ptr = uival;
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+
+// Check if an environment variable is set to a positive value (>0)
+// Returns 1 and sets the destination of val_ptr to the converted value
+// Otherwise returns 0
+
+static int check_pos_env(char *env, unsigned int *val_ptr)
+{
+    unsigned int original_val = *val_ptr;
+    if (check_non_neg_env(env, val_ptr))
+    {
+        if (*val_ptr > 0)
+        {
+            return 1;
+        }
+        else
+        {
+            fprintf(stderr, "Ignoring \"%s\" value \"%u\" - out of range\r\n", env, *val_ptr);
+            *val_ptr = original_val;
+            return 0;
+        }
+    }
+    else
+    {
+        return 0;
+    }
+}
 
 DB_ENV* bdberl_db_env(void)
 {
