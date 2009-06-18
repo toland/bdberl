@@ -112,6 +112,7 @@ typedef struct
     DB*  db;
     const char* name;
     PortList* ports;
+    int active_ports;
 } Database;
 
 
@@ -128,6 +129,8 @@ typedef struct
     ErlDrvTermData port_owner;  /* Pid of the port owner */
 
     DbRefList* dbrefs;          /* List of databases that this port has opened  */
+
+    int active_dbs;             /* Count of entries in dbrefs (for debug) */
 
     DB_TXN* txn;             /* Transaction handle for this port; each port may only have 1 txn
                               * active */

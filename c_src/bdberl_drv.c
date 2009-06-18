@@ -1900,6 +1900,7 @@ static int add_portref(int dbref, ErlDrvPort port)
         current = (PortList*)zalloc(sizeof(PortList));
         current->port = port;
         last->next = current;
+        G_DATABASES[dbref].active_ports++;
         return 1;
     }
     else
@@ -1908,6 +1909,7 @@ static int add_portref(int dbref, ErlDrvPort port)
         current = zalloc(sizeof(PortList));
         current->port = port;
         G_DATABASES[dbref].ports = current;
+        G_DATABASES[dbref].active_ports++;
         return 1;
     }
 }
@@ -1934,6 +1936,7 @@ static int del_portref(int dbref, ErlDrvPort port)
 
             // Delete this entry
             zfree(current);
+            G_DATABASES[dbref].active_ports--;
             return 1;
         }
 
@@ -1970,6 +1973,7 @@ static int add_dbref(PortData* data, int dbref)
         current = zalloc(sizeof(DbRefList));
         current->dbref = dbref;
         last->next = current;
+        data->active_dbs++;
         return 1;
     }
     else
@@ -1978,6 +1982,7 @@ static int add_dbref(PortData* data, int dbref)
         current = zalloc(sizeof(DbRefList));
         current->dbref = dbref;
         data->dbrefs = current;
+        data->active_dbs++;
         return 1;
     }
 }
@@ -2009,6 +2014,7 @@ static int del_dbref(PortData* data, int dbref)
 
             // Delete this entry
             zfree(current);
+            data->active_dbs--;
             return 1;
         }
 
