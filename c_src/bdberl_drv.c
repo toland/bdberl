@@ -75,6 +75,8 @@ static int check_pos_env(char *env, unsigned int *val_ptr);
 
 static int open_database(const char* name, DBTYPE type, unsigned int flags, PortData* data, int* dbref_res);
 static int close_database(int dbref, unsigned flags, PortData* data);
+static void check_all_databases_closed();
+
 static int delete_database(const char* name);
 
 static void get_info(int target, void* values, BinHelper* bh);
@@ -381,7 +383,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
 {
     PortData* d = (PortData*)handle;
 
-    DBG("Stopping port %p\r\n", d->port);
+    DBG("Stopping port %p - cancelling async jobs\r\n", d->port);
 
     // Grab the port lock, in case we have an async job running
     erl_drv_mutex_lock(d->port_lock);
@@ -407,6 +409,8 @@ static void bdberl_drv_stop(ErlDrvData handle)
     erl_drv_mutex_destroy(d->port_lock);
 
     // If a cursor is open, close it
+    DBG("Stopping port %p - cleaning up cursors and transactions\r\n", d->port);
+
     if (d->cursor)
     {
         d->cursor->close(d->cursor);
@@ -416,9 +420,14 @@ static void bdberl_drv_stop(ErlDrvData handle)
     abort_txn(d);
 
     // Close all the databases we previously opened
+    DBG("Stopping port %p - closing all dbrefs\r\n", d->port);
     while (d->dbrefs)
     {
-        close_database(d->dbrefs->dbref, 0, d);
+        int dbref = d->dbrefs->dbref;
+        if (ERROR_NONE != close_database(dbref, 0, d))
+        {
+            DBG("Stopping port %p could not close dbref %d\r\n", d->port, dbref);
+        }
     }
 
     // If this port was registered as the endpoint for logging, go ahead and 
@@ -426,6 +435,8 @@ static void bdberl_drv_stop(ErlDrvData handle)
     // unregister if it's already initialized to this port.
     if (G_LOG_PORT == d->port)
     {
+        DBG("Stopping port %p - removing logging portr\n", d->port);
+
         WRITE_LOCK(G_LOG_RWLOCK);
 
         // Remove the references
@@ -494,6 +505,11 @@ static void bdberl_drv_finish()
         close(G_BDBERL_PIPE[0]);
     }
     G_BDBERL_PIPE[0] = -1;
+
+
+    // TODO: Add check to make sure all databases are *really* closed before
+    //       the environment is closed.
+    check_all_databases_closed();
 
     // Cleanup and shut down the BDB environment. Note that we assume
     // all ports have been released and thuse all databases/txns/etc are also gone.
@@ -1095,16 +1111,17 @@ static int close_database(int dbref, unsigned flags, PortData* data)
         assert(G_DATABASES[dbref].ports != 0);
 
         // Now disassociate this port from the database's port list
-        del_portref(dbref, data->port);
+        assert(1 == del_portref(dbref, data->port));
 
         // Finally, if there are no other references to the database, close out
         // the database completely
         Database* database = &G_DATABASES[dbref];
+        int rc = ERROR_NONE;
         if (database->ports == 0)
         {
             // Close out the BDB handle
             DBGCMD(data, "database->db->close(%p, %08x) (for dbref %d)", database->db, flags, dbref);
-            int rc = database->db->close(database->db, flags);
+            rc = database->db->close(database->db, flags);
             DBGCMDRC(data, rc);
 
             // Remove the entry from the names map
@@ -1116,13 +1133,45 @@ static int close_database(int dbref, unsigned flags, PortData* data)
         }
 
         WRITE_UNLOCK(G_DATABASES_RWLOCK);
-        return ERROR_NONE;
+        return rc;
     }
     else
     {
         return ERROR_INVALID_DBREF;
     }
 }
+
+
+// Called on driver shutdown to ensure all databases are closed.
+// This should be unnecessary if all the dbref/port code has worked properly,
+// but it is very important for BDB to shutdown cleanly so a final check can't hurt.
+static void check_all_databases_closed()
+{
+    WRITE_LOCK(G_DATABASES_RWLOCK);
+
+    int dbref;
+    int rc;
+    for (dbref = 0; dbref < G_DATABASES_SIZE; dbref++)
+    {
+        Database* database = &G_DATABASES[dbref];
+        if (NULL != database->ports)
+        {
+            fprintf(stderr, "BDBERL: Ports still open on '%s' dbref %d\r\n",
+                    database->name ? database->name : "no name", dbref);
+        }
+
+        if (NULL != database->db)
+        {
+            int flags = 0;
+            DBG("final db->close(%p, %08x) (for dbref %d)", database->db, flags, dbref);
+            rc = database->db->close(database->db, flags);
+            DBG(" = %s (%d)\r\n", rc == 0 ? "ok" : bdberl_rc_to_atom_str(rc), rc);
+        }
+    }
+
+    WRITE_UNLOCK(G_DATABASES_RWLOCK);
+}
+
 
 // Abort the transaction and clean up
 static void abort_txn(PortData* d)
@@ -1830,6 +1879,7 @@ static void* zalloc(unsigned int size)
 
 static int add_portref(int dbref, ErlDrvPort port)
 {
+    DBG("Adding port %p to dbref %d\r\n", port, dbref);
     PortList* current = G_DATABASES[dbref].ports;
     if (current)
     {
@@ -1864,6 +1914,7 @@ static int add_portref(int dbref, ErlDrvPort port)
 
 static int del_portref(int dbref, ErlDrvPort port)
 {
+    DBG("Deleting port %p from dbref %d\r\n", port, dbref);
     PortList* current = G_DATABASES[dbref].ports;
     PortList* last = 0;
     assert(NULL != current);
@@ -1899,6 +1950,7 @@ static int del_portref(int dbref, ErlDrvPort port)
  */
 static int add_dbref(PortData* data, int dbref)
 {
+    DBG("Adding dbref %d to port %p\r\n", dbref, data->port);
     DbRefList* current = data->dbrefs;
     if (current)
     {
@@ -1935,6 +1987,8 @@ static int add_dbref(PortData* data, int dbref)
  */
 static int del_dbref(PortData* data, int dbref)
 {
+    DBG("Deleting dbref %d from port %p\r\n", dbref, data->port);
+
     DbRefList* current = data->dbrefs;
     DbRefList* last = 0;
     assert(NULL != current);
