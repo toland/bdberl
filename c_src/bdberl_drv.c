@@ -137,7 +137,7 @@ static int G_DB_ENV_ERROR = 0;
  */
 static Database*     G_DATABASES        = 0;
 static unsigned int  G_DATABASES_SIZE   = 0;
-static ErlDrvMutex*  G_DATABASES_MUTEX = 0;
+static ErlDrvMutex*  G_DATABASES_MUTEX  = 0;
 static hive_hash*    G_DATABASES_NAMES  = 0;
 
 
@@ -445,7 +445,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
     while (d->dbrefs)
     {
         int dbref = d->dbrefs->dbref;
-        if (ERROR_NONE != close_database(dbref, 0, d))
+        if (close_database(dbref, 0, d) != ERROR_NONE)
         {
             DBG("Stopping port %p could not close dbref %d\r\n", d->port, dbref);
         }
@@ -482,13 +482,13 @@ static void bdberl_drv_finish()
 {
     DBG("BDB DRIVER FINISHING\r\n");
     // Stop the thread pools
-    if (NULL != G_TPOOL_GENERAL)
+    if (G_TPOOL_GENERAL != NULL)
     {
         bdberl_tpool_stop(G_TPOOL_GENERAL);
         G_TPOOL_GENERAL = NULL;
     }
 
-    if (NULL != G_TPOOL_TXNS)
+    if (G_TPOOL_TXNS != NULL)
     {
         bdberl_tpool_stop(G_TPOOL_TXNS);
         G_TPOOL_TXNS = NULL;
@@ -500,28 +500,28 @@ static void bdberl_drv_finish()
     G_CHECKPOINT_ACTIVE = 0;
 
     // Close the writer fd on the pipe to signal finish to the utility threads
-    if (-1 != G_BDBERL_PIPE[1])
+    if (G_BDBERL_PIPE[1] != -1)
     {
         close(G_BDBERL_PIPE[1]);
         G_BDBERL_PIPE[1] = -1;
     }
 
     // Wait for the deadlock checker to shutdown -- then wait for it
-    if (0 != G_DEADLOCK_THREAD)
+    if (G_DEADLOCK_THREAD != 0)
     {
         erl_drv_thread_join(G_DEADLOCK_THREAD, 0);
         G_DEADLOCK_THREAD = 0;
     }
 
     // Wait for the checkpointer to shutdown -- then wait for it
-    if (0 != G_CHECKPOINT_THREAD)
+    if (G_CHECKPOINT_THREAD != 0)
     {
         erl_drv_thread_join(G_CHECKPOINT_THREAD, 0);
         G_CHECKPOINT_THREAD = 0;
     }
 
     // Close the reader fd on the pipe now utility threads are closed
-    if (-1 != G_BDBERL_PIPE[0])
+    if (G_BDBERL_PIPE[0] != -1)
     {
         close(G_BDBERL_PIPE[0]);
     }
@@ -534,30 +534,30 @@ static void bdberl_drv_finish()
 
     // Cleanup and shut down the BDB environment. Note that we assume
     // all ports have been released and thuse all databases/txns/etc are also gone.
-    if (NULL != G_DB_ENV)
+    if (G_DB_ENV != NULL)
     {
         G_DB_ENV->close(G_DB_ENV, 0);
         G_DB_ENV = NULL;
     }
-    if (NULL != G_DATABASES)
+    if (G_DATABASES != NULL)
     {
         driver_free(G_DATABASES);
         G_DATABASES = NULL;
     }
-    if (NULL != G_DATABASES_MUTEX)
+    if (G_DATABASES_MUTEX != NULL)
     {
         erl_drv_mutex_destroy(G_DATABASES_MUTEX);
         G_DATABASES_MUTEX = NULL;
     }
 
-    if (NULL != G_DATABASES_NAMES)
+    if (G_DATABASES_NAMES != NULL)
     {
         hive_hash_destroy(G_DATABASES_NAMES);
         G_DATABASES_NAMES = NULL;
     }
     
     // Release the logging rwlock
-    if (NULL != G_LOG_RWLOCK)
+    if (G_LOG_RWLOCK != NULL)
     {
         erl_drv_rwlock_destroy(G_LOG_RWLOCK);
         G_LOG_RWLOCK = NULL;
@@ -967,16 +967,16 @@ static int check_pos_env(char *env, unsigned int *val_ptr)
 
 DB_ENV* bdberl_db_env(void)
 {
-    assert(NULL != G_DB_ENV);
+    assert(G_DB_ENV != NULL);
     return G_DB_ENV;
 }
 
 DB* bdberl_lookup_dbref(int dbref)
 {
-    assert(NULL != G_DATABASES);
-    assert(0 <= dbref);
-    assert(G_DATABASES_SIZE > dbref);
-    assert(NULL != G_DATABASES[dbref].db);
+    assert(G_DATABASES != NULL);
+    assert(dbref >= 0);
+    assert(dbref < G_DATABASES_SIZE);
+    assert(G_DATABASES[dbref].db != NULL);
     return G_DATABASES[dbref].db;
 }
 
@@ -1079,12 +1079,11 @@ static int open_database(const char* name, DBTYPE type, unsigned int flags, Port
         }
 
         // Database is open. Store all the data into the allocated ref
-        assert(NULL != db);
+        assert(db != NULL);
         G_DATABASES[dbref].db = db;
         G_DATABASES[dbref].name = strdup(name);
         G_DATABASES[dbref].ports = zalloc(sizeof(PortList));
         G_DATABASES[dbref].ports->port = data->port;
-        G_DATABASES[dbref].active_ports = 1;
 
         // Make entry in hash table of names
         hive_hash_add(G_DATABASES_NAMES, G_DATABASES[dbref].name, &(G_DATABASES[dbref]));
@@ -1155,13 +1154,13 @@ static void check_all_databases_closed()
     for (dbref = 0; dbref < G_DATABASES_SIZE; dbref++)
     {
         Database* database = &G_DATABASES[dbref];
-        if (NULL != database->ports)
+        if (database->ports != NULL)
         {
             fprintf(stderr, "BDBERL: Ports still open on '%s' dbref %d\r\n",
                     database->name ? database->name : "no name", dbref);
         }
 
-        if (NULL != database->db)
+        if (database->db != NULL)
         {
             int flags = 0;
             DBG("final db->close(%p, %08x) (for dbref %d)", database->db, flags, dbref);
@@ -1256,7 +1255,7 @@ static void get_info(int target, void* values, BinHelper* bh)
         int rc = G_DB_ENV->get_lg_dir(G_DB_ENV, &dir);
         if (dir == NULL)
         {
-            if (0 != G_DB_ENV->get_home(G_DB_ENV, &dir))
+            if (G_DB_ENV->get_home(G_DB_ENV, &dir) != 0)
             {
                 dir = NULL;
             }
@@ -1287,7 +1286,7 @@ void bdberl_async_cleanup(PortData* d)
 char *bdberl_rc_to_atom_str(int rc)
 {
     char *error = erl_errno_id(rc);
-    if (NULL != error && strcmp("unknown", error) != 0)
+    if (error != NULL && strcmp("unknown", error) != 0)
     {
         return error;
     }
@@ -1340,7 +1339,7 @@ static int send_dir_info(ErlDrvPort port, ErlDrvTermData pid, const char *path)
     {
         rc = EINVAL;
     }
-    else if (0 != statvfs(path, &svfs))
+    else if (statvfs(path, &svfs) != 0)
     {
         rc = errno;
     }
@@ -1349,7 +1348,7 @@ static int send_dir_info(ErlDrvPort port, ErlDrvTermData pid, const char *path)
         rc = 0;
     }
 
-    if (0 != rc)
+    if (rc != 0)
     {
         bdberl_send_rc(port, pid, rc);
     }
@@ -1389,7 +1388,7 @@ void bdberl_send_rc(ErlDrvPort port, ErlDrvTermData pid, int rc)
     {
         // See if this is a standard errno that we have an erlang code for
         char *error = bdberl_rc_to_atom_str(rc);
-        if (NULL != error)
+        if (error != NULL)
         {
             ErlDrvTermData response[] = { ERL_DRV_ATOM,  driver_mk_atom("error"),
                                           ERL_DRV_ATOM,  driver_mk_atom(error),
@@ -1452,7 +1451,7 @@ static void async_cleanup_and_send_kv(PortData* d, int rc, DBT* key, DBT* value)
     {
         // See if this is a standard errno that we have an erlang code for
         char *error = bdberl_rc_to_atom_str(rc);
-        if (NULL != error)
+        if (error != NULL)
         {
             ErlDrvTermData response[] = { ERL_DRV_ATOM,  driver_mk_atom("error"),
                                           ERL_DRV_ATOM,  driver_mk_atom(error),
@@ -1603,7 +1602,7 @@ static void do_async_txnop(void* arg)
     }
     else if (d->async_op == CMD_TXN_COMMIT)
     {
-        assert(NULL != d->txn);
+        assert(d->txn != NULL);
         DBGCMD(d, "d->txn->txn_commit(%p, %08X)", d->txn, d->async_flags);
         rc = d->txn->commit(d->txn, d->async_flags);
         DBGCMDRC(d, rc);
@@ -1623,7 +1622,7 @@ static void do_async_cursor_get(void* arg)
 {
     // Payload is: << DbRef:32, Flags:32, KeyLen:32, Key:KeyLen >>
     PortData* d = (PortData*)arg;
-    assert(NULL != d->cursor);
+    assert(d->cursor != NULL);
     
     // Setup DBTs 
     DBT key;
@@ -1881,7 +1880,6 @@ static int add_portref(int dbref, ErlDrvPort port)
         current = (PortList*)zalloc(sizeof(PortList));
         current->port = port;
         last->next = current;
-        G_DATABASES[dbref].active_ports++;
         return 1;
     }
     else
@@ -1890,7 +1888,6 @@ static int add_portref(int dbref, ErlDrvPort port)
         current = zalloc(sizeof(PortList));
         current->port = port;
         G_DATABASES[dbref].ports = current;
-        G_DATABASES[dbref].active_ports++;
         return 1;
     }
 }
@@ -1900,7 +1897,7 @@ static int del_portref(int dbref, ErlDrvPort port)
     DBG("Deleting port %p from dbref %d\r\n", port, dbref);
     PortList* current = G_DATABASES[dbref].ports;
     PortList* last = 0;
-    assert(NULL != current);
+    assert(current != NULL);
     while (current)
     {
         if (current->port == port)
@@ -1917,7 +1914,6 @@ static int del_portref(int dbref, ErlDrvPort port)
 
             // Delete this entry
             zfree(current);
-            G_DATABASES[dbref].active_ports--;
             return 1;
         }
 
@@ -1954,7 +1950,6 @@ static int add_dbref(PortData* data, int dbref)
         current = zalloc(sizeof(DbRefList));
         current->dbref = dbref;
         last->next = current;
-//        data->active_dbs++;
         return 1;
     }
     else
@@ -1963,7 +1958,6 @@ static int add_dbref(PortData* data, int dbref)
         current = zalloc(sizeof(DbRefList));
         current->dbref = dbref;
         data->dbrefs = current;
-//        data->active_dbs++;
         return 1;
     }
 }
@@ -1977,7 +1971,7 @@ static int del_dbref(PortData* data, int dbref)
 
     DbRefList* current = data->dbrefs;
     DbRefList* last = 0;
-    assert(NULL != current);
+    assert(current != NULL);
 
     while (current)
     {
@@ -1995,7 +1989,6 @@ static int del_dbref(PortData* data, int dbref)
 
             // Delete this entry
             zfree(current);
-//            data->active_dbs--;
             return 1;
         }
 
@@ -2120,7 +2113,7 @@ static void* deadlock_check(void* arg)
         // Run the lock detection
         int count = 0;
         int rc = G_DB_ENV->lock_detect(G_DB_ENV, 0, DB_LOCK_DEFAULT, &count);
-        if (0 != rc)
+        if (rc != 0)
         {
             DBG("lock_detect returned %s(%d)\n", db_strerror(rc), rc);
         }
