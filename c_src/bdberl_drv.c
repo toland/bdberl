@@ -409,7 +409,8 @@ static void bdberl_drv_stop(ErlDrvData handle)
     erl_drv_mutex_destroy(d->port_lock);
 
     // If a cursor is open, close it
-    DBG("Stopping port %p - cleaning up cursors and transactions\r\n", d->port);
+    DBG("Stopping port %p - cleaning up cursors (%p) and transactions (%p)\r\n", d->port,
+        d->cursor, d->txn);
 
     if (d->cursor)
     {
@@ -435,7 +436,7 @@ static void bdberl_drv_stop(ErlDrvData handle)
     // unregister if it's already initialized to this port.
     if (G_LOG_PORT == d->port)
     {
-        DBG("Stopping port %p - removing logging portr\n", d->port);
+        DBG("Stopping port %p - removing logging port\r\n", d->port);
 
         WRITE_LOCK(G_LOG_RWLOCK);
 
@@ -1973,7 +1974,7 @@ static int add_dbref(PortData* data, int dbref)
         current = zalloc(sizeof(DbRefList));
         current->dbref = dbref;
         last->next = current;
-        data->active_dbs++;
+//        data->active_dbs++;
         return 1;
     }
     else
@@ -1982,7 +1983,7 @@ static int add_dbref(PortData* data, int dbref)
         current = zalloc(sizeof(DbRefList));
         current->dbref = dbref;
         data->dbrefs = current;
-        data->active_dbs++;
+//        data->active_dbs++;
         return 1;
     }
 }
@@ -2014,7 +2015,7 @@ static int del_dbref(PortData* data, int dbref)
 
             // Delete this entry
             zfree(current);
-            data->active_dbs--;
+//            data->active_dbs--;
             return 1;
         }
 
