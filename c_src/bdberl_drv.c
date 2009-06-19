@@ -139,8 +139,8 @@ static Database*     G_DATABASES        = 0;
 static Database*     G_DATABASES_SHADOW = 0;
 static unsigned int  G_DATABASES_SIZE   = 0;
 static ErlDrvRWLock* G_DATABASES_RWLOCK = 0;
-static volatile ErlDrvTid     G_DATABASES_RWLOCK_TID = 0;
-static volatile ErlDrvPort    G_DATABASES_RWLOCK_PORT = 0;
+static volatile ErlDrvTid     G_DATABASES_RWLOCK_TID = 0;  /* TID for writers */
+static volatile ErlDrvPort    G_DATABASES_RWLOCK_PORT = 0; /* Port for writers */
 static hive_hash*    G_DATABASES_NAMES  = 0;
 
 
@@ -220,26 +220,26 @@ static void DBGCMDRC(PortData *d, int rc);
 
 void READ_LOCK_DATABASES(void *x, ErlDrvPort P)
 {
+#ifdef DEBUG
     ErlDrvTid self = erl_drv_thread_self();                             
+#endif
     DBG("threadid %p port %p: read locking G_DATABASES\r\n", self, P);       
     erl_drv_rwlock_rlock(G_DATABASES_RWLOCK);                                        
     assert(0 == G_DATABASES_RWLOCK_TID);                                           
     assert(0 == G_DATABASES_RWLOCK_PORT);                                          
-    G_DATABASES_RWLOCK_TID = self;                                
-    G_DATABASES_RWLOCK_PORT = P;                                                   
     assert(0 == memcmp(G_DATABASES, G_DATABASES_SHADOW, sizeof(G_DATABASES[0])*G_DATABASES_SIZE)); 
     DBG("threadid %p port %p: read locked G_DATABASES\r\n", self, P);   
 }
 
 void READ_UNLOCK_DATABASES(void *x, ErlDrvPort P)                                                
 {
+#ifdef DEBUG
     ErlDrvTid self = erl_drv_thread_self();                         
+#endif
     DBG("threadid %p port %p: read unlocking G_DATABASES\r\n", self, P);      
-    assert(erl_drv_thread_self() == G_DATABASES_RWLOCK_TID);                       
-    assert(P == G_DATABASES_RWLOCK_PORT);                                          
+    assert(0 == G_DATABASES_RWLOCK_TID);                                           
+    assert(0 == G_DATABASES_RWLOCK_PORT);                                          
     assert(0 == memcmp(G_DATABASES, G_DATABASES_SHADOW, sizeof(G_DATABASES[0])*G_DATABASES_SIZE)); 
-    G_DATABASES_RWLOCK_TID = 0;                                                    
-    G_DATABASES_RWLOCK_PORT = 0;                                                   
     erl_drv_rwlock_runlock(G_DATABASES_RWLOCK);                                      
     DBG("threadid %p port %p: read unlocked G_DATABASES\r\n", self, P);
 }
@@ -263,7 +263,9 @@ void WRITE_LOCK_DATABASES(void *x, ErlDrvPort P)
       
 void WRITE_UNLOCK_DATABASES(void *x, ErlDrvPort P)                                                
 {
+#ifdef DEBUG
     ErlDrvTid self = erl_drv_thread_self();                         
+#endif
     DBG("threadid %p port %p: write unlocking G_DATABASES\r\n", self, P);
     assert(erl_drv_thread_self() == G_DATABASES_RWLOCK_TID);                       
     assert(P == G_DATABASES_RWLOCK_PORT);                                          
