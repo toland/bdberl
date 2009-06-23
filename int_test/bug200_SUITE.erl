@@ -8,20 +8,39 @@
 
 -compile(export_all).
 
--define(PROCS, 32).
+-define(PROCS, 4).
+%-define(DATA_SIZE, 2097152).
+-define(DATA_SIZE, 10240).
+-define(REQUESTS, 1000).
+
 all() ->
     [bug200].
 
 bug200(_Config) ->
+    %% Make sure bdberl is not loaded
+    
+    %% Set the thread pools
+    os:putenv("BDBERL_NUM_GENERAL_THREADS", "10"),
+    os:putenv("BDBERL_NUM_TXN_THREADS",     "10"),
+    os:putenv("BDBERL_DEADLOCK_CHECK_INTERVAL", "1"),
+
+    %% Copy in the DB_CONFIG
+    {ok, _} = file:copy("../../int_test/PROD_DB_CONFIG","DB_CONFIG"),
+    
+    crypto:start(),
+    Data = crypto:rand_bytes(?DATA_SIZE),
+
+    ct:print("Driver running with:~n~p~n", [bdberl:driver_info()]),
+
     %% Spin up 15 processes (async thread pool is 10)
-    start_procs(?PROCS),
+    start_procs(?PROCS, Data),
     wait_for_finish(?PROCS).
 
-start_procs(0) ->
+start_procs(0,_) ->
     ok;
-start_procs(Count) ->
-    spawn_link(?MODULE, bug200_run, [self()]),
-    start_procs(Count-1).
+start_procs(Count, Data) ->
+    spawn_link(?MODULE, bug200_run, [self(), Data]),
+    start_procs(Count-1, Data).
 
 wait_for_finish(0) ->
     ok;
@@ -32,31 +51,55 @@ wait_for_finish(Count) ->
             wait_for_finish(Count-1)
     end.
 
-bug200_run(Owner) ->
+bug200_run(Owner, Data) ->
     %% Seed the RNG
     {A1, A2, A3} = now(),
     random:seed(A1, A2, A3),
 
     %% Start bug200ing
-    bug200_incr_loop(Owner, 1000).
+    File = "bug200_" ++ integer_to_list(random:uniform(16)) ++ ".bdb",
+    {ok, DbRef} = bdberl:open(File, btree,  [create, multiversion, read_uncommitted]),
+    Reqs = ?REQUESTS div ?PROCS,
+    ct:print("~p starting for ~p requests~n", [self(), Reqs]),
+    bug200_incr_loop(Owner, DbRef, Data, Reqs).
 
-bug200_incr_loop(Owner, 0) ->
+bug200_incr_loop(Owner, DbRef, _DataBin, 0) ->
+    bdberl:close(DbRef),
     Owner ! {finished, self()};
-bug200_incr_loop(Owner, Count) ->
-    % ct:print("~p", [Count]),
+bug200_incr_loop(Owner, DbRef, DataBin, Count) ->
+    if 
+        (Count rem 10) =:= 0 ->
+            ct:print("Pid ~p count ~p~n", [self(), Count]);
+        true ->
+            ok
+    end,
+            
     %% Choose random key
     Key = random:uniform(1200),
-    File = "bug200_" ++ integer_to_list(random:uniform(16)) ++ ".bdb",
-    %% Start a txn that will read the current value of the key and increment by 1
-    F = fun(_Key, Value) ->
-            case Value of
-                not_found -> 0;
-                Value     -> Value + 1
-            end
+
+    %% Do a get on the key with read_uncommitted
+    case bdberl:get(DbRef, Key,  [read_uncommitted]) of
+        {error, Reason} ->
+            ct:print("get error: ~p~n", [Reason]);
+        _ ->
+            ok
+    end,
+
+    %% Data 
+    DataSize = random:uniform(?DATA_SIZE),
+    <<Data:DataSize/bytes,_/binary>> = DataBin,
+
+    F = fun(_Key, _Value) ->
+                Data
         end,
-    %% Open up a port and database
-    {ok, DbRef} = bdberl:open(File, btree),
-    {ok, _} = bdberl:update(DbRef, Key, F),
-    ok = bdberl:close(DbRef),
-    bug200_incr_loop(Owner, Count-1).
+    
+    %% Do an update inside a txn snapshot
+    case bdberl:update(DbRef, Key, F, undefined, [txn_snapshot]) of
+        {error, Reason2} ->
+            ct:print("update error: ~p~n", [Reason2]);
+        _ ->
+            ok
+    end,
+
+    bug200_incr_loop(Owner, DbRef, DataBin, Count-1).
 
