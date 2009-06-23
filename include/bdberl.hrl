@@ -5,7 +5,7 @@
 %% @copyright 2008-9 The Hive http://www.thehive.com/
 %% @author Dave "dizzyd" Smith <dizzyd@dizzyd.com>
 %% @author Phil Toland <phil.toland@gmail.com>
-%% @author Jon Meredith <jmeredith@thehive.com>
+%% @author Jon Meredith <jon@jonmeredith.com>
 %% @end
 %%
 %% Permission is hereby granted, free of charge, to any person obtaining a copy

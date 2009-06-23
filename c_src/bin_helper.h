@@ -4,7 +4,7 @@
  * Copyright (c) 2008-9 The Hive http://www.thehive.com/
  * Authors: Dave "dizzyd" Smith <dizzyd@dizzyd.com>
  *          Phil Toland <phil.toland@gmail.com>
- *          Jon Meredith <jmeredith@thehive.com>
+ *          Jon Meredith <jon@jonmeredith.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
