@@ -2220,7 +2220,6 @@ flag_value(Flag) ->
 do_put(Action, Db, Key, Value, Opts) ->
     {KeyLen, KeyBin} = to_binary(Key),
     {_, ValBin} = to_binary(Value),
-    {_, ValBin} = to_binary(Value),
     Crc = erlang:crc32(ValBin),
     FinalValBin = <<Crc:32/native, ValBin/binary>>,
     FinalValBinLen = size(FinalValBin),
