@@ -548,15 +548,11 @@ static void bdberl_drv_finish()
     }
     G_BDBERL_PIPE[0] = -1;
 
-
-    // TODO: Add check to make sure all databases are *really* closed before
-    //       the environment is closed.
-    check_all_databases_closed();
-
     // Cleanup and shut down the BDB environment. Note that we assume
     // all ports have been released and thuse all databases/txns/etc are also gone.
     if (G_DB_ENV != NULL)
     {
+        check_all_databases_closed();
         G_DB_ENV->close(G_DB_ENV, 0);
         G_DB_ENV = NULL;
     }
